@@ -2,7 +2,8 @@ package main
 
 import (
 	"backend/internal/config"
-	"backend/internal/entity"
+	"backend/internal/handler/routes"
+	"backend/migrations"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -10,9 +11,9 @@ import (
 func main() {
 	config.ConnectDB()
 
-	// ✅ migrate tables
-	config.DB.AutoMigrate(&entity.User{})
+	migrations.Migrations()
 
 	app := fiber.New()
+	routes.AuthRoutes(app)
 	app.Listen(":8997")
 }
