@@ -19,6 +19,7 @@ func main() {
     AllowOrigins: "http://localhost:5173,http://localhost:5174",
     AllowHeaders: "Origin, Content-Type, Accept, Authorization",
     AllowMethods: "GET,POST,PUT,DELETE,OPTIONS",
+	AllowCredentials: true,
 }))
 	routes.AuthRoutes(app)
 	app.Listen(":8997")

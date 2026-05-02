@@ -36,3 +36,17 @@ func AuthMiddleware() fiber.Handler {
 		return c.Next()
 	}
 }
+
+func AdminOnly() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		role := c.Locals("role")
+
+		if role != "admin" {
+			return c.Status(403).JSON(fiber.Map{
+				"error": "admin only access",
+			})
+		}
+
+		return c.Next()
+	}
+}

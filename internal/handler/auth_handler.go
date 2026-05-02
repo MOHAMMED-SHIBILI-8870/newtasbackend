@@ -53,7 +53,7 @@ func Register(c *fiber.Ctx) error {
 		})
 	}
 
-	otp, err := usecase.CreateOTP(config.DB, user.ID, "signup", 5)
+	otp, err := usecase.CreateOTP(config.DB, input.Email, "signup", 5)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "could not generate OTP",
@@ -88,7 +88,7 @@ func VerifyOTPHandler(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "user not found"})
 	}
 
-	valid, err := usecase.VerifyOTP(user.ID, input.OTP, input.Purpose)
+	valid, err := usecase.VerifyOTP(input.Email, input.OTP, input.Purpose)
 	if err != nil || !valid {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "OTP is expired or wrong"})
 	}
@@ -142,12 +142,12 @@ func Login(c *fiber.Ctx) error {
 	expiresAt := time.Now().Add(7 * 24 * time.Hour)
 	usecase.SaveRefreshToken(config.DB, users.ID, hashedToken, expiresAt)
 
-	// Set cookies
 	c.Cookie(&fiber.Cookie{
 		Name:     "access_token",
 		Value:    accessToken,
-		Expires:  time.Now().Add(20 * time.Minute),
-		HTTPOnly: false,
+		HTTPOnly: true,
+		SameSite: "None", // 🔥 REQUIRED for cross-origin
+		Secure:   false,  // true in production (HTTPS)
 	})
 
 	c.Cookie(&fiber.Cookie{
@@ -185,7 +185,7 @@ func ForgetPassword(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).SendString("user not found")
 	}
 
-	otp, err := usecase.CreateOTP(config.DB, user.ID, "reset_password", 5)
+	otp, err := usecase.CreateOTP(config.DB, input.Email, "reset_password", 5)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "could not generate OTP",
@@ -206,9 +206,9 @@ func ForgetPassword(c *fiber.Ctx) error {
 
 func ResetPassword(c *fiber.Ctx) error {
 	var input struct {
-		Email      string `json:"email"`
+		Email       string `json:"email"`
 		NewPassword string `json:"new_password"`
-		OTP        string `json:"otp"`
+		OTP         string `json:"otp"`
 	}
 
 	if err := c.BodyParser(&input); err != nil {
@@ -226,7 +226,7 @@ func ResetPassword(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).SendString(err.Error())
 	}
 
-	valid, err := usecase.VerifyOTP(user.ID, input.OTP, "reset_password")
+	valid, err := usecase.VerifyOTP(input.Email, input.OTP, "reset_password")
 	if !valid || err != nil {
 		return c.Status(fiber.StatusBadRequest).SendString("Invalid or expired token")
 	}
@@ -285,7 +285,7 @@ func ResendOtpHandler(c *fiber.Ctx) error {
 		})
 	}
 
-	otp, err := usecase.CreateOTP(config.DB, user.ID, input.Purpose, 5)
+	otp, err := usecase.CreateOTP(config.DB, input.Email, input.Purpose, 5)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "could not generate OTP",
