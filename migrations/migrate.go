@@ -10,5 +10,6 @@ func Migrations() error {
 		&entity.User{},
 		&entity.RefreshToken{},
 		&entity.OTP{},
+		&entity.Trip{},
 	)
 }

@@ -11,6 +11,7 @@ import (
 func ValidateJwt(tokenStr string) (uint, string, error) {
 
 	secretKey := os.Getenv("JWT_SECRETKEY")
+	fmt.Println("SECRET:", secretKey)
 	if secretKey == "" {
 		return 0, "", fmt.Errorf("JWT secret not configured")
 	}

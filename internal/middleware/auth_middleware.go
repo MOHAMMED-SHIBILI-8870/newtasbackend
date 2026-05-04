@@ -9,13 +9,25 @@ import (
 func AuthMiddleware() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 
-		accessToken := c.Cookies("access_token")
-		if accessToken == "" {
+		// Get Authorization header
+		authHeader := c.Get("Authorization")
+		if authHeader == "" {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"error": "authentication required",
+				"error": "missing Authorization header",
 			})
 		}
 
+		// Expect: "Bearer <token>"
+		const prefix = "Bearer "
+		if len(authHeader) <= len(prefix) || authHeader[:len(prefix)] != prefix {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "invalid Authorization format",
+			})
+		}
+
+		accessToken := authHeader[len(prefix):]
+
+		// Validate token
 		userID, role, err := usecase.ValidateJwt(accessToken)
 		if err != nil {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
@@ -29,24 +41,32 @@ func AuthMiddleware() fiber.Handler {
 			})
 		}
 
-		// Set values in context
-		c.Locals("userID", userID)
+		c.Locals("user_id", uint(userID))
 		c.Locals("role", role)
 
 		return c.Next()
 	}
 }
 
-func AdminOnly() fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		role := c.Locals("role")
 
-		if role != "admin" {
-			return c.Status(403).JSON(fiber.Map{
-				"error": "admin only access",
+func RoleMiddleware(allowedRoles ...string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+
+		role, ok := c.Locals("role").(string)
+		if !ok {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": "role not found",
 			})
 		}
 
-		return c.Next()
+		for _, allowed := range allowedRoles {
+			if role == allowed {
+				return c.Next()
+			}
+		}
+
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"error": "access denied",
+		})
 	}
 }
