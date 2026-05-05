@@ -78,6 +78,31 @@ func ValidateRefreshToken(db *gorm.DB, token string) (*entity.RefreshToken, erro
 	return &retoken, nil
 }
 
+// create a new access and refresh token
+
+func RefreshAccessToken(db *gorm.DB, refreshToken string) (string, error) {
+
+	// validate refresh token
+	rt, err := ValidateRefreshToken(db, refreshToken)
+	if err != nil {
+		return "", err
+	}
+
+	// get user (you may need repo here)
+	var user entity.User
+	if err := db.First(&user, rt.UserId).Error; err != nil {
+		return "", err
+	}
+
+	// generate new access token
+	newAccessToken, err := GenerateAccessToken(user.ID, user.Role)
+	if err != nil {
+		return "", err
+	}
+
+	return newAccessToken, nil
+}
+
 // ❌ Delete Refresh Token
 func DeleteReToken(db *gorm.DB, token string) error {
 	hash := sha256.Sum256([]byte(token))

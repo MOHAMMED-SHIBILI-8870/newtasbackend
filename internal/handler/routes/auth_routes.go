@@ -4,9 +4,10 @@ import (
 	"backend/internal/handler"
 
 	"github.com/gofiber/fiber/v2"
+	"gorm.io/gorm"
 )
 
-func AuthRoutes(app *fiber.App) {
+func AuthRoutes(app *fiber.App,db *gorm.DB) {
 	auth := app.Group("/auth")
 
 	auth.Post("/register",handler.Register)
@@ -16,4 +17,5 @@ func AuthRoutes(app *fiber.App) {
 	auth.Post("/reset-password", handler.ResetPassword)
 	auth.Post("/resend-otp", handler.ResendOtpHandler)
 	auth.Post("/logout", handler.Logout)
+	auth.Post("/refresh",handler.RefreshTokenHandler(db))
 }

@@ -3,53 +3,112 @@ package repository
 import (
 	"backend/internal/entity"
 	"context"
+	"fmt"
 
 	"gorm.io/gorm"
 )
 
-// TripRepository defines the interface for database operations
-type TripRepository interface {
-	Create(ctx context.Context, trip *entity.Trip) error
-	GetByID(ctx context.Context, id uint) (*entity.Trip, error)
-	GetByUserID(ctx context.Context, userID uint) ([]entity.Trip, error)
-	Update(ctx context.Context, trip *entity.Trip) error
-	Delete(ctx context.Context, id uint) error
+type UserRepository interface {
+	GetByID(ctx context.Context, id uint) (*entity.User, error)
+	GetUsers(ctx context.Context, role string, search string) ([]entity.User, error)
+	UpdateUserStatus(ctx context.Context, id uint, isBlocked bool) error
+	UpdateUserRole(ctx context.Context, id uint, newRole string) error
 }
 
-type tripRepository struct {
+type userRepository struct {
 	db *gorm.DB
 }
 
-// NewTripRepository creates a new instance of the repository
-func NewTripRepository(db *gorm.DB) TripRepository {
-	return &tripRepository{db: db}
+func NewUserRepository(db *gorm.DB) UserRepository {
+	return &userRepository{db: db}
 }
 
-// Create inserts a new trip into the database
-func (r *tripRepository) Create(ctx context.Context, trip *entity.Trip) error {
-	return r.db.WithContext(ctx).Create(trip).Error
+//
+// 🔍 Get user by ID
+//
+func (r *userRepository) GetByID(ctx context.Context, id uint) (*entity.User, error) {
+	var user entity.User
+
+	err := r.db.WithContext(ctx).First(&user, id).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, fmt.Errorf("user not found")
+		}
+		return nil, err
+	}
+
+	return &user, nil
 }
 
-// GetByID finds a single trip and preloads the owner (User) details
-func (r *tripRepository) GetByID(ctx context.Context, id uint) (*entity.Trip, error) {
-	var trip entity.Trip
-	err := r.db.WithContext(ctx).Preload("User").First(&trip, id).Error
-	return &trip, err
+//
+// 📄 Get users with filters (role + search)
+//
+func (r *userRepository) GetUsers(ctx context.Context, role string, search string) ([]entity.User, error) {
+	var users []entity.User
+
+	query := r.db.WithContext(ctx).
+		Model(&entity.User{}).
+		Omit("password") // hide sensitive field
+
+	// Filter by role
+	if role != "" {
+		query = query.Where("role = ?", role)
+	}
+
+	// Search by name or email (case-insensitive, DB-safe)
+	if search != "" {
+		searchTerm := "%" + search + "%"
+		query = query.Where(
+			"LOWER(name) LIKE LOWER(?) OR LOWER(email) LIKE LOWER(?)",
+			searchTerm, searchTerm,
+		)
+	}
+
+	// Order for consistency
+	err := query.Order("id ASC").Find(&users).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return users, nil
 }
 
-// GetByUserID fetches all trips belonging to a specific user
-func (r *tripRepository) GetByUserID(ctx context.Context, userID uint) ([]entity.Trip, error) {
-	var trips []entity.Trip
-	err := r.db.WithContext(ctx).Where("user_id = ?", userID).Find(&trips).Error
-	return trips, err
+//
+// 🔒 Block / Unblock user
+//
+func (r *userRepository) UpdateUserStatus(ctx context.Context, id uint, isBlocked bool) error {
+	result := r.db.WithContext(ctx).
+		Model(&entity.User{}).
+		Where("id = ?", id).
+		Update("is_blocked", isBlocked)
+
+	if result.Error != nil {
+		return result.Error
+	}
+
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("user not found")
+	}
+
+	return nil
 }
 
-// Update saves changes to an existing trip record
-func (r *tripRepository) Update(ctx context.Context, trip *entity.Trip) error {
-	return r.db.WithContext(ctx).Save(trip).Error
-}
+//
+// 🔄 Change user role
+//
+func (r *userRepository) UpdateUserRole(ctx context.Context, id uint, newRole string) error {
+	result := r.db.WithContext(ctx).
+		Model(&entity.User{}).
+		Where("id = ?", id).
+		Update("role", newRole)
 
-// Delete marks a trip as deleted (Soft Delete)
-func (r *tripRepository) Delete(ctx context.Context, id uint) error {
-	return r.db.WithContext(ctx).Delete(&entity.Trip{}, id).Error
+	if result.Error != nil {
+		return result.Error
+	}
+
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("user not found")
+	}
+
+	return nil
 }

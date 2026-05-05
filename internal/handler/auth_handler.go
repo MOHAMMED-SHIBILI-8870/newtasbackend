@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"gorm.io/gorm"
 )
 
 // Register
@@ -329,4 +330,87 @@ func Logout(c *fiber.Ctx) error {
 		"status":  "success",
 		"message": "Logged out successfully",
 	})
+}
+
+// create new access token and create new refresh token
+func RefreshTokenHandler(db *gorm.DB) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+
+		// ✅ get refresh token from cookie
+		refreshToken := c.Cookies("refresh_token")
+		if refreshToken == "" {
+			return c.Status(400).JSON(fiber.Map{
+				"error": "missing refresh token",
+			})
+		}
+
+		// 🔍 validate refresh token
+		rt, err := usecase.ValidateRefreshToken(db, refreshToken)
+		if err != nil {
+			return c.Status(401).JSON(fiber.Map{
+				"error": "invalid or expired refresh token",
+			})
+		}
+
+		// ❌ delete old refresh token (rotation)
+		_ = usecase.DeleteReToken(db, refreshToken)
+
+		// 👤 get user from DB
+		var user entity.User
+		if err := db.First(&user, rt.UserId).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error": "user not found",
+			})
+		}
+
+		// 🔐 generate new access token
+		newAccessToken, err := usecase.GenerateAccessToken(user.ID, user.Role)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error": "failed to generate access token",
+			})
+		}
+
+		// 🔄 generate new refresh token
+		newRefreshToken, hashed, err := usecase.GenerateRefreshToken()
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error": "failed to generate refresh token",
+			})
+		}
+
+		// 💾 save new refresh token
+		expiresAt := time.Now().Add(7 * 24 * time.Hour)
+		if err := usecase.SaveRefreshToken(db, user.ID, hashed, expiresAt); err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error": "failed to save refresh token",
+			})
+		}
+
+		// 🍪 overwrite access token cookie
+		c.Cookie(&fiber.Cookie{
+			Name:     "access_token",
+			Value:    newAccessToken,
+			HTTPOnly: true,
+			SameSite: "None",
+			Secure:   false,
+			Expires:  time.Now().Add(15 * time.Minute),
+		})
+
+		// 🍪 overwrite refresh token cookie
+		c.Cookie(&fiber.Cookie{
+			Name:     "refresh_token",
+			Value:    newRefreshToken,
+			HTTPOnly: true,
+			SameSite: "None",
+			Secure:   false,
+			Expires:  expiresAt,
+		})
+
+		return c.JSON(fiber.Map{
+			"message": "token refreshed successfully",
+			"access_token":newAccessToken,
+			"refresh_token":newRefreshToken,
+		})
+	}
 }

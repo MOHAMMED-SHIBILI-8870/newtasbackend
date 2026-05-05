@@ -2,10 +2,12 @@ package middleware
 
 import (
 	"backend/internal/usecase"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 )
 
+// AuthMiddleware validates JWT and sets user info in context
 func AuthMiddleware() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 
@@ -17,41 +19,35 @@ func AuthMiddleware() fiber.Handler {
 			})
 		}
 
-		// Expect: "Bearer <token>"
-		const prefix = "Bearer "
-		if len(authHeader) <= len(prefix) || authHeader[:len(prefix)] != prefix {
+		// Check Bearer format
+		if !strings.HasPrefix(authHeader, "Bearer ") {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"error": "invalid Authorization format",
 			})
 		}
 
-		accessToken := authHeader[len(prefix):]
+		// Extract token
+		token := strings.TrimPrefix(authHeader, "Bearer ")
 
-		// Validate token
-		userID, role, err := usecase.ValidateJwt(accessToken)
+		// Validate JWT
+		userID, role, err := usecase.ValidateJwt(token)
 		if err != nil {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"error": "invalid token",
+				"error": "invalid or expired token",
 			})
 		}
 
-		if role == "admin" {
-			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-				"error": "admins are not allowed",
-			})
-		}
-
+		// Store values in context
 		c.Locals("user_id", uint(userID))
 		c.Locals("role", role)
 
 		return c.Next()
 	}
 }
-
-
 func RoleMiddleware(allowedRoles ...string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 
+		// Get role from context
 		role, ok := c.Locals("role").(string)
 		if !ok {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
@@ -59,6 +55,7 @@ func RoleMiddleware(allowedRoles ...string) fiber.Handler {
 			})
 		}
 
+		// Check if role is allowed
 		for _, allowed := range allowedRoles {
 			if role == allowed {
 				return c.Next()

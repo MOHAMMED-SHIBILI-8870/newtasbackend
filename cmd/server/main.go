@@ -32,14 +32,19 @@ func main() {
 		AllowCredentials: true,
 	}))
 
-	// 3. Initialize Trip Layers (Dependency Injection)
+	// trip
 	tripRepo := repository.NewTripRepository(db)
 	tripUsecase := usecase.NewTripUsecase(tripRepo)
 	tripHandler := handler.NewTripHandler(tripUsecase)
+	// Admin
+	userRepo := repository.NewUserRepository(db)         
+    adminUsecase := usecase.NewAdminUsecase(userRepo)
+    adminHandler := handler.NewAdminHandler(adminUsecase)
 
 	// 4. Register Routes
-	routes.AuthRoutes(app)
-	routes.TripRoutes(app, tripHandler) // Add this line!
+	routes.AuthRoutes(app,db)
+	routes.TripRoutes(app, tripHandler) 
+	routes.AdminRoutes(app, adminHandler)
 
 	// 5. Start Server
 	app.Listen(":8997")
