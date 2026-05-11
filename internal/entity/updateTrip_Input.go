@@ -5,4 +5,5 @@ type UpdateTripInput struct {
 	Budget      *float64 `json:"budget"`
 	Duration    *int     `json:"duration"`
 	Description *string  `json:"description"`
+	ImageUrl    *string  `json:"image_url"`
 }
