@@ -107,48 +107,64 @@ func (h *TripHandler) GetUserTrips(c *fiber.Ctx) error {
 	return c.JSON(trips)
 }
 
-// UpdateTrip: PUT /trips/:id
+// UpdateTrip: PATCH /trips/:id
+// UpdateTrip: PATCH /admin/trips/:id
 func (h *TripHandler) UpdateTrip(c *fiber.Ctx) error {
-	id, _ := strconv.Atoi(c.Params("id"))
+
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "invalid trip id",
+		})
+	}
 
 	var input entity.UpdateTripInput
+
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid input",
+			"error": "invalid input",
 		})
 	}
 
 	userVal := c.Locals("user_id")
 
 	var userID uint
+
 	switch v := userVal.(type) {
 	case float64:
 		userID = uint(v)
+
 	case int:
 		userID = uint(v)
+
 	case uint:
 		userID = v
+
 	default:
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 			"error": "invalid user_id type",
 		})
 	}
 
-	// pass clean data
-	if err := h.usecase.UpdateTrip(c.Context(), uint(id), input, userID); err != nil {
+	if err := h.usecase.UpdateTrip(c.Context(),uint(id),input,userID); err != nil {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 			"error": err.Error(),
 		})
 	}
 
 	return c.JSON(fiber.Map{
-		"message": "updated successfully",
+		"message": "trip updated successfully",
 	})
 }
 
 // DeleteTrip: DELETE /trips/:id
 func (h *TripHandler) DeleteTrip(c *fiber.Ctx) error {
-	id, _ := strconv.Atoi(c.Params("id"))
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "invalid trip id",
+		})
+	}
 	userVal := c.Locals("user_id")
 
 	var userID uint
@@ -171,5 +187,17 @@ func (h *TripHandler) DeleteTrip(c *fiber.Ctx) error {
 		})
 	}
 
-	return c.SendStatus(fiber.StatusNoContent) 
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func (h *TripHandler) GetAllTrips(c *fiber.Ctx) error {
+
+	trips, err := h.usecase.GetAllTrips(c.Context())
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to fetch trips",
+		})
+	}
+
+	return c.JSON(trips)
 }

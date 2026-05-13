@@ -7,14 +7,20 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-func TripRoutes(app fiber.Router, h *handler.TripHandler) {
-	// Create a group and apply your Auth Middleware
-	tripGroup := app.Group("/trips", middleware.AuthMiddleware())
 
-	// CRUD Endpoints
-	tripGroup.Post("/", h.CreateTrip)             // Create
-	tripGroup.Get("/my-trips", h.GetUserTrips)     // Read (List)
-	tripGroup.Get("/:id", h.GetTripByID)           // Read (Single)
-	tripGroup.Put("/:id", h.UpdateTrip)            // Update
-	tripGroup.Delete("/:id", h.DeleteTrip)         // Delete
+func TripRoutes(app fiber.Router, h *handler.TripHandler) {
+
+	// Logged-in users + admin can view
+	trip := app.Group("/trips", middleware.AuthMiddleware())
+
+	trip.Get("/my-trips", h.GetUserTrips)
+	trip.Get("/", h.GetAllTrips)
+	trip.Get("/:id", h.GetTripByID)
+
+	// Admin only
+	adminTrip := app.Group("/admin/trips",middleware.AuthMiddleware(),middleware.RoleMiddleware("admin"))
+
+	adminTrip.Post("/", h.CreateTrip)
+	adminTrip.Patch("/:id", h.UpdateTrip)
+	adminTrip.Delete("/:id", h.DeleteTrip)
 }

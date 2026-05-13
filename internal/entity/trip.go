@@ -19,7 +19,7 @@ type Trip struct {
 	Duration    int     `json:"duration"` // Number of days
 	Description string  `gorm:"type:text" json:"description"`
 	ImageUrl    string  `json:"image_url"`
-
+	Status      string  `gorm:"default:'pending'" json:"status"`
 	// Relationship  Every trip belongs to a User
 	UserId uint `gorm:"not null" json:"user_id"`
 	User   User `gorm:"foreignKey:UserId;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;" json:"user,omitempty"`

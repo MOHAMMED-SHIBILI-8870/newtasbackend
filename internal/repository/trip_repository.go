@@ -12,6 +12,7 @@ type TripRepository interface {
 	Create(ctx context.Context, trip *entity.Trip) error
 	GetByID(ctx context.Context, id uint) (*entity.Trip, error)
 	GetByUserID(ctx context.Context, userID uint) ([]entity.Trip, error)
+	GetAll(ctx context.Context) ([]entity.Trip, error)
 	Update(ctx context.Context, trip *entity.Trip) error
 	Delete(ctx context.Context, id uint) error
 }
@@ -54,3 +55,12 @@ func (r *tripRepository) Delete(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&entity.Trip{}, id).Error
 }
 
+func (r *tripRepository) GetAll(ctx context.Context) ([]entity.Trip, error) {
+	var trips []entity.Trip
+
+	err := r.db.WithContext(ctx).
+		Preload("User").
+		Find(&trips).Error
+
+	return trips, err
+}

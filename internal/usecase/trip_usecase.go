@@ -1,10 +1,10 @@
 package usecase
 
 import (
-	"context"
-	"errors"
 	"backend/internal/entity"
 	"backend/internal/repository"
+	"context"
+	"errors"
 )
 
 type TripUsecase struct {
@@ -37,33 +37,42 @@ func (u *TripUsecase) GetTripsByOwner(ctx context.Context, userID uint) ([]entit
 }
 
 // UpdateTrip checks if the user owns the trip before updating
-func (u *TripUsecase) UpdateTrip(ctx context.Context, id uint, input entity.UpdateTripInput, userID uint) error {
+func (u *TripUsecase) UpdateTrip(ctx context.Context,id uint,input entity.UpdateTripInput,userID uint,) error {
+
 	existing, err := u.repo.GetByID(ctx, id)
 	if err != nil {
 		return err
 	}
 
-	// ownership check
+	// Ownership check
 	if existing.UserId != userID {
 		return errors.New("you do not have permission to update this trip")
 	}
 
-	// update only provided fields
+	// PATCH logic
 	if input.Destination != nil {
 		existing.Destination = *input.Destination
 	}
+
 	if input.Budget != nil {
 		existing.Budget = *input.Budget
 	}
+
 	if input.Duration != nil {
 		existing.Duration = *input.Duration
 	}
+
 	if input.Description != nil {
 		existing.Description = *input.Description
 	}
 
+	if input.ImageUrl != nil {
+		existing.ImageUrl = *input.ImageUrl
+	}
+
 	return u.repo.Update(ctx, existing)
 }
+
 // DeleteTrip checks ownership before deleting
 func (u *TripUsecase) DeleteTrip(ctx context.Context, id uint, userID uint) error {
 	existing, err := u.repo.GetByID(ctx, id)
@@ -77,4 +86,8 @@ func (u *TripUsecase) DeleteTrip(ctx context.Context, id uint, userID uint) erro
 	}
 
 	return u.repo.Delete(ctx, id)
+}
+
+func (u *TripUsecase) GetAllTrips(ctx context.Context) ([]entity.Trip, error) {
+	return u.repo.GetAll(ctx)
 }
