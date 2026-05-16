@@ -22,4 +22,8 @@ func AdminRoutes(app *fiber.App, h *handler.AdminHandler) {
     // 3. Change User Role
     // This allows promoting a 'user' to a 'guide' or 'manager'
     adminGroup.Patch("/users/:id/role", h.UpdateRole)
+
+    adminGroup.Post("/createUser",h.CreateUserByAdmin)
+
+    adminGroup.Delete("/remove/:id",h.DeleteUser)
 }

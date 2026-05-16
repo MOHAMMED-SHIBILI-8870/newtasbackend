@@ -11,5 +11,7 @@ func Migrations() error {
 		&entity.RefreshToken{},
 		&entity.OTP{},
 		&entity.Trip{},
+		&entity.ChatRequest{},
+		&entity.ChatResponse{},
 	)
 }

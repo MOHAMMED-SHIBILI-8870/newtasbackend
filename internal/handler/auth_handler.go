@@ -158,16 +158,10 @@ func Login(c *fiber.Ctx) error {
 		HTTPOnly: true,
 	})
 
-	// Replace your final return c.JSON with this:
 	return c.JSON(fiber.Map{
 		"status":       "logged in",
+		"role":         users.Role,
 		"access_token": accessToken,
-		"user": fiber.Map{
-			"id":    users.ID,
-			"email": users.Email,
-			"role":  users.Role,
-			"name":  users.FullName, // If you have a Name field
-		},
 	})
 }
 
@@ -414,9 +408,9 @@ func RefreshTokenHandler(db *gorm.DB) fiber.Handler {
 		})
 
 		return c.JSON(fiber.Map{
-			"message":       "token refreshed successfully",
-			"access_token":  newAccessToken,
-			"refresh_token": newRefreshToken,
+			"message": "token refreshed successfully",
+			"access_token":newAccessToken,
+			"refresh_token":newRefreshToken,
 		})
 	}
 }
