@@ -3,7 +3,6 @@ package handler
 import (
 	"backend/internal/entity"
 	"backend/internal/usecase"
-	"errors"
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
@@ -17,40 +16,15 @@ func NewTripHandler(u *usecase.TripUsecase) *TripHandler {
 	return &TripHandler{usecase: u}
 }
 
-// CreateTrip: POST /trips
 func (h *TripHandler) CreateTrip(c *fiber.Ctx) error {
 	var trip entity.Trip
 
-	// 1. Parse JSON body from React
 	if err := c.BodyParser(&trip); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid JSON format",
+			"error": "Malformed JSON layout format input",
 		})
 	}
 
-	userVal := c.Locals("user_id")
-
-	var userID uint
-	switch v := userVal.(type) {
-	case float64:
-		userID = uint(v)
-	case int:
-		userID = uint(v)
-	case uint:
-		userID = v
-	default:
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "invalid user_id type",
-		})
-	}
-
-	trip.UserId = userID
-
-	if trip.Duration <= 0 {
-		return errors.New("duration must be at least 1 day")
-	}
-
-	// 3. Delegate to Usecase
 	if err := h.usecase.CreateTrip(c.Context(), &trip); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
@@ -60,144 +34,76 @@ func (h *TripHandler) CreateTrip(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(trip)
 }
 
-// GetTripByID: GET /trips/:id
-func (h *TripHandler) GetTripByID(c *fiber.Ctx) error {
-	id, err := strconv.Atoi(c.Params("id"))
-	if err != nil {
+func (h *TripHandler) GetTripByName(c *fiber.Ctx) error {
+	name := c.Params("name")
+	if name == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid ID format",
+			"error": "Invalid trip parameter query",
 		})
 	}
 
-	trip, err := h.usecase.GetTripDetails(c.Context(), uint(id))
+	trip, err := h.usecase.GetTripByName(c.Context(), name)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": "Trip not found",
+			"error": "Targeted package not found",
 		})
 	}
 
 	return c.JSON(trip)
 }
 
-// GetUserTrips: GET /trips/my-trips
-func (h *TripHandler) GetUserTrips(c *fiber.Ctx) error {
-	userVal := c.Locals("user_id")
-
-	var userID uint
-	switch v := userVal.(type) {
-	case float64:
-		userID = uint(v)
-	case int:
-		userID = uint(v)
-	case uint:
-		userID = v
-	default:
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "invalid user_id type",
-		})
-	}
-
-	trips, err := h.usecase.GetTripsByOwner(c.Context(), userID)
+func (h *TripHandler) GetAllTrips(c *fiber.Ctx) error {
+	trips, err := h.usecase.GetAllTrips(c.Context())
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to fetch trips",
+			"error": "Failed to pull trips collection from store",
 		})
 	}
 
-	return c.JSON(trips)
+	return c.Status(200).JSON(trips)
 }
 
-// UpdateTrip: PATCH /trips/:id
-// UpdateTrip: PATCH /admin/trips/:id
 func (h *TripHandler) UpdateTrip(c *fiber.Ctx) error {
-
 	id, err := strconv.Atoi(c.Params("id"))
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "invalid trip id",
+			"error": "Invalid administrative key target ID",
 		})
 	}
 
 	var input entity.UpdateTripInput
-
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "invalid input",
+			"error": "Invalid modification structural schema parser match",
 		})
 	}
 
-	userVal := c.Locals("user_id")
-
-	var userID uint
-
-	switch v := userVal.(type) {
-	case float64:
-		userID = uint(v)
-
-	case int:
-		userID = uint(v)
-
-	case uint:
-		userID = v
-
-	default:
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "invalid user_id type",
-		})
-	}
-
-	if err := h.usecase.UpdateTrip(c.Context(),uint(id),input,userID); err != nil {
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+	if err := h.usecase.UpdateTrip(c.Context(), uint(id), input); err != nil {
+		return c.Status(fiber.StatusUnprocessableEntity).JSON(fiber.Map{
 			"error": err.Error(),
 		})
 	}
 
 	return c.JSON(fiber.Map{
-		"message": "trip updated successfully",
+		"message": "Trip package data records updated successfully",
 	})
 }
 
-// DeleteTrip: DELETE /trips/:id
 func (h *TripHandler) DeleteTrip(c *fiber.Ctx) error {
 	id, err := strconv.Atoi(c.Params("id"))
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "invalid trip id",
-		})
-	}
-	userVal := c.Locals("user_id")
-
-	var userID uint
-	switch v := userVal.(type) {
-	case float64:
-		userID = uint(v)
-	case int:
-		userID = uint(v)
-	case uint:
-		userID = v
-	default:
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "invalid user_id type",
+			"error": "Target sequence index mismatch parsing",
 		})
 	}
 
-	if err := h.usecase.DeleteTrip(c.Context(), uint(id), userID); err != nil {
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-			"error": "Unauthorized or delete failed",
+	if err := h.usecase.DeleteTrip(c.Context(), uint(id)); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "System failed executing resource extraction target",
 		})
 	}
 
-	return c.SendStatus(fiber.StatusNoContent)
-}
-
-func (h *TripHandler) GetAllTrips(c *fiber.Ctx) error {
-
-	trips, err := h.usecase.GetAllTrips(c.Context())
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "failed to fetch trips",
-		})
-	}
-
-	return c.JSON(trips)
+	return c.JSON(fiber.Map{
+		"message": "Package safely deleted from application records",
+	})
 }

@@ -10,7 +10,31 @@ import (
 	"gorm.io/gorm"
 )
 
+// ========================================
+// Helper Function
+// ========================================
+
+func setAuthCookie(
+	c *fiber.Ctx,
+	name string,
+	value string,
+	exp time.Time,
+) {
+	c.Cookie(&fiber.Cookie{
+		Name:     name,
+		Value:    value,
+		Expires:  exp,
+		HTTPOnly: true,
+		SameSite: "None",
+		Secure:   false, // true in production with HTTPS
+		Path:     "/",
+	})
+}
+
+// ========================================
 // Register
+// ========================================
+
 func Register(c *fiber.Ctx) error {
 	var input struct {
 		Fullname string `json:"full_name"`
@@ -20,21 +44,34 @@ func Register(c *fiber.Ctx) error {
 
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": err.Error(),
+			"error": "invalid request body",
+		})
+	}
+
+	// validation
+	if input.Fullname == "" || input.Email == "" || input.Password == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "all fields are required",
+		})
+	}
+
+	if len(input.Password) < 6 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "password must be at least 6 characters",
 		})
 	}
 
 	var existUser entity.User
 	if err := config.DB.Where("email = ?", input.Email).First(&existUser).Error; err == nil {
 		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
-			"error": "Email already registered",
+			"error": "email already registered",
 		})
 	}
 
 	hashpass, err := usecase.HashPassword(input.Password)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Error creating account",
+			"error": "failed to hash password",
 		})
 	}
 
@@ -54,6 +91,10 @@ func Register(c *fiber.Ctx) error {
 		})
 	}
 
+	// delete old OTP if exists
+	config.DB.Where("user_id = ? AND purpose = ?", user.ID, "signup").
+		Delete(&entity.OTP{})
+
 	otp, err := usecase.CreateOTP(config.DB, input.Email, "signup", 5)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -68,11 +109,14 @@ func Register(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"message": "User registered successfully. OTP sent to your email.",
+		"message": "user registered successfully, OTP sent to email",
 	})
 }
 
+// ========================================
 // Verify OTP
+// ========================================
+
 func VerifyOTPHandler(c *fiber.Ctx) error {
 	var input struct {
 		Email   string `json:"email"`
@@ -81,17 +125,29 @@ func VerifyOTPHandler(c *fiber.Ctx) error {
 	}
 
 	if err := c.BodyParser(&input); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "invalid request body",
+		})
+	}
+
+	if input.Email == "" || input.OTP == "" || input.Purpose == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "missing required fields",
+		})
 	}
 
 	var user entity.User
 	if err := config.DB.Where("email = ?", input.Email).First(&user).Error; err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "user not found"})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "user not found",
+		})
 	}
 
 	valid, err := usecase.VerifyOTP(input.Email, input.OTP, input.Purpose)
 	if err != nil || !valid {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "OTP is expired or wrong"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "invalid or expired OTP",
+		})
 	}
 
 	if input.Purpose == "signup" {
@@ -109,7 +165,10 @@ func VerifyOTPHandler(c *fiber.Ctx) error {
 	})
 }
 
+// ========================================
 // Login
+// ========================================
+
 func Login(c *fiber.Ctx) error {
 	var input struct {
 		Email    string `json:"email"`
@@ -117,53 +176,98 @@ func Login(c *fiber.Ctx) error {
 	}
 
 	if err := c.BodyParser(&input); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "invalid request body",
+		})
 	}
 
-	var users entity.User
-	if err := config.DB.Where("email = ?", input.Email).First(&users).Error; err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "email not found"})
+	if input.Email == "" || input.Password == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "email and password required",
+		})
 	}
 
-	if !users.IsVerified {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "user not verified"})
+	var user entity.User
+	if err := config.DB.Where("email = ?", input.Email).First(&user).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "email not found",
+		})
 	}
 
-	if users.IsBlocked {
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "user blocked"})
+	if !user.IsVerified {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": "user not verified",
+		})
 	}
 
-	if !usecase.Checkpassword(input.Password, users.HashPassword) {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "wrong password"})
+	if user.IsBlocked {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"error": "user blocked",
+		})
 	}
 
-	accessToken, _ := usecase.GenerateAccessToken(users.ID, users.Role)
-	refreshToken, hashedToken, _ := usecase.GenerateRefreshToken()
+	if !usecase.Checkpassword(input.Password, user.HashPassword) {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": "wrong password",
+		})
+	}
+
+	accessToken, err := usecase.GenerateAccessToken(user.ID, user.Role)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to generate access token",
+		})
+	}
+
+	refreshToken, hashedToken, err := usecase.GenerateRefreshToken()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to generate refresh token",
+		})
+	}
 
 	expiresAt := time.Now().Add(7 * 24 * time.Hour)
-	usecase.SaveRefreshToken(config.DB, users.ID, hashedToken, expiresAt)
 
-	c.Cookie(&fiber.Cookie{
-		Name:     "access_token",
-		Value:    accessToken,
-		HTTPOnly: true,
-		SameSite: "None", // 🔥 REQUIRED for cross-origin
-		Secure:   false,  // true in production (HTTPS)
-	})
+	if err := usecase.SaveRefreshToken(
+		config.DB,
+		user.ID,
+		hashedToken,
+		expiresAt,
+	); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to save refresh token",
+		})
+	}
 
-	c.Cookie(&fiber.Cookie{
-		Name:     "refresh_token",
-		Value:    refreshToken,
-		Expires:  expiresAt,
-		HTTPOnly: true,
-	})
+	// set cookies
+	setAuthCookie(
+		c,
+		"access_token",
+		accessToken,
+		time.Now().Add(15*time.Minute),
+	)
+
+	setAuthCookie(
+		c,
+		"refresh_token",
+		refreshToken,
+		expiresAt,
+	)
 
 	return c.JSON(fiber.Map{
-		"status":       "logged in",
-		"role":         users.Role,
-		"access_token": accessToken,
-	})
+	"status":       "logged in",
+	"access_token": accessToken,
+	"user": fiber.Map{
+		"id":    user.ID,
+		"email": user.Email,
+		"role":  user.Role,
+	},
+})
 }
+
+// ========================================
+// Forget Password
+// ========================================
 
 func ForgetPassword(c *fiber.Ctx) error {
 	var input struct {
@@ -171,10 +275,11 @@ func ForgetPassword(c *fiber.Ctx) error {
 	}
 
 	if err := c.BodyParser(&input); err != nil {
-		return c.Status(fiber.StatusBadRequest).SendString(err.Error())
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "invalid request body",
+		})
 	}
 
-	// manual validation (Fiber doesn't support `binding`)
 	if input.Email == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "email is required",
@@ -183,8 +288,14 @@ func ForgetPassword(c *fiber.Ctx) error {
 
 	var user entity.User
 	if err := config.DB.Where("email = ?", input.Email).First(&user).Error; err != nil {
-		return c.Status(fiber.StatusNotFound).SendString("user not found")
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "user not found",
+		})
 	}
+
+	// delete old OTP
+	config.DB.Where("user_id = ? AND purpose = ?", user.ID, "reset_password").
+		Delete(&entity.OTP{})
 
 	otp, err := usecase.CreateOTP(config.DB, input.Email, "reset_password", 5)
 	if err != nil {
@@ -201,9 +312,13 @@ func ForgetPassword(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{
 		"status": "success",
-		"msg":    "OTP sent to your email for password reset",
+		"msg":    "OTP sent successfully",
 	})
 }
+
+// ========================================
+// Reset Password
+// ========================================
 
 func ResetPassword(c *fiber.Ctx) error {
 	var input struct {
@@ -213,7 +328,9 @@ func ResetPassword(c *fiber.Ctx) error {
 	}
 
 	if err := c.BodyParser(&input); err != nil {
-		return c.Status(fiber.StatusBadRequest).SendString(err.Error())
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "invalid request body",
+		})
 	}
 
 	if input.Email == "" || input.NewPassword == "" || input.OTP == "" {
@@ -222,28 +339,48 @@ func ResetPassword(c *fiber.Ctx) error {
 		})
 	}
 
-	var user entity.User
-	if err := config.DB.Where("email = ?", input.Email).First(&user).Error; err != nil {
-		return c.Status(fiber.StatusNotFound).SendString(err.Error())
+	if len(input.NewPassword) < 6 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "password must be at least 6 characters",
+		})
 	}
 
-	valid, err := usecase.VerifyOTP(input.Email, input.OTP, "reset_password")
-	if !valid || err != nil {
-		return c.Status(fiber.StatusBadRequest).SendString("Invalid or expired token")
+	var user entity.User
+	if err := config.DB.Where("email = ?", input.Email).First(&user).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "user not found",
+		})
+	}
+
+	valid, err := usecase.VerifyOTP(
+		input.Email,
+		input.OTP,
+		"reset_password",
+	)
+
+	if err != nil || !valid {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "invalid or expired OTP",
+		})
 	}
 
 	hashedPass, err := usecase.HashPassword(input.NewPassword)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to hash password",
+		})
 	}
 
-	if err := config.DB.Model(entity.User{}).
-		Where("email = ?", user.Email).
+	if err := config.DB.Model(&entity.User{}).
+		Where("email = ?", input.Email).
 		Updates(map[string]interface{}{
 			"hash_password": hashedPass,
 			"updated_at":    time.Now(),
 		}).Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
+
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to update password",
+		})
 	}
 
 	config.DB.Where("user_id = ? AND purpose = ?", user.ID, "reset_password").
@@ -251,9 +388,13 @@ func ResetPassword(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{
 		"status": "success",
-		"msg":    "Password reset successfully",
+		"msg":    "password reset successfully",
 	})
 }
+
+// ========================================
+// Resend OTP
+// ========================================
 
 func ResendOtpHandler(c *fiber.Ctx) error {
 	var input struct {
@@ -275,8 +416,8 @@ func ResendOtpHandler(c *fiber.Ctx) error {
 
 	var user entity.User
 	if err := config.DB.Where("email = ?", input.Email).First(&user).Error; err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "invalid credentials",
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "user not found",
 		})
 	}
 
@@ -286,14 +427,29 @@ func ResendOtpHandler(c *fiber.Ctx) error {
 		})
 	}
 
-	otp, err := usecase.CreateOTP(config.DB, input.Email, input.Purpose, 5)
+	// delete old OTP
+	config.DB.Where("user_id = ? AND purpose = ?", user.ID, input.Purpose).
+		Delete(&entity.OTP{})
+
+	otp, err := usecase.CreateOTP(
+		config.DB,
+		input.Email,
+		input.Purpose,
+		5,
+	)
+
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "could not generate OTP",
 		})
 	}
 
-	if err := usecase.SentOTPEmail(input.Email, otp, input.Purpose); err != nil {
+	if err := usecase.SentOTPEmail(
+		input.Email,
+		otp,
+		input.Purpose,
+	); err != nil {
+
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "could not send OTP email",
 		})
@@ -301,116 +457,124 @@ func ResendOtpHandler(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{
 		"status":  "success",
-		"message": "OTP resent successfully. Please check your email",
+		"message": "OTP resent successfully",
 	})
 }
+
+// ========================================
+// Logout
+// ========================================
 
 func Logout(c *fiber.Ctx) error {
 	refreshToken := c.Cookies("refresh_token")
 
-	if refreshToken == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Refresh token required",
-		})
+	if refreshToken != "" {
+		_ = usecase.DeleteReToken(config.DB, refreshToken)
 	}
 
-	if err := usecase.DeleteReToken(config.DB, refreshToken); err != nil {
-		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
-	}
+	// clear access token cookie
+	setAuthCookie(
+		c,
+		"access_token",
+		"",
+		time.Now().Add(-time.Hour),
+	)
 
-	// clear cookie
-	c.Cookie(&fiber.Cookie{
-		Name:     "refresh_token",
-		Value:    "",
-		Expires:  time.Now().Add(-time.Hour),
-		HTTPOnly: true,
-	})
+	// clear refresh token cookie
+	setAuthCookie(
+		c,
+		"refresh_token",
+		"",
+		time.Now().Add(-time.Hour),
+	)
 
 	return c.JSON(fiber.Map{
 		"status":  "success",
-		"message": "Logged out successfully",
+		"message": "logged out successfully",
 	})
 }
 
-// create new access token and create new refresh token
+// ========================================
+// Refresh Token
+// ========================================
+
 func RefreshTokenHandler(db *gorm.DB) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 
-		// ✅ get refresh token from cookie
 		refreshToken := c.Cookies("refresh_token")
+
 		if refreshToken == "" {
-			return c.Status(400).JSON(fiber.Map{
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"error": "missing refresh token",
 			})
 		}
 
-		// 🔍 validate refresh token
 		rt, err := usecase.ValidateRefreshToken(db, refreshToken)
 		if err != nil {
-			return c.Status(401).JSON(fiber.Map{
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"error": "invalid or expired refresh token",
 			})
 		}
 
-		// ❌ delete old refresh token (rotation)
+		// rotate refresh token
 		_ = usecase.DeleteReToken(db, refreshToken)
 
-		// 👤 get user from DB
 		var user entity.User
 		if err := db.First(&user, rt.UserId).Error; err != nil {
-			return c.Status(500).JSON(fiber.Map{
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 				"error": "user not found",
 			})
 		}
 
-		// 🔐 generate new access token
-		newAccessToken, err := usecase.GenerateAccessToken(user.ID, user.Role)
+		newAccessToken, err := usecase.GenerateAccessToken(
+			user.ID,
+			user.Role,
+		)
+
 		if err != nil {
-			return c.Status(500).JSON(fiber.Map{
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 				"error": "failed to generate access token",
 			})
 		}
 
-		// 🔄 generate new refresh token
-		newRefreshToken, hashed, err := usecase.GenerateRefreshToken()
+		newRefreshToken, hashedToken, err := usecase.GenerateRefreshToken()
 		if err != nil {
-			return c.Status(500).JSON(fiber.Map{
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 				"error": "failed to generate refresh token",
 			})
 		}
 
-		// 💾 save new refresh token
 		expiresAt := time.Now().Add(7 * 24 * time.Hour)
-		if err := usecase.SaveRefreshToken(db, user.ID, hashed, expiresAt); err != nil {
-			return c.Status(500).JSON(fiber.Map{
+
+		if err := usecase.SaveRefreshToken(
+			db,
+			user.ID,
+			hashedToken,
+			expiresAt,
+		); err != nil {
+
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 				"error": "failed to save refresh token",
 			})
 		}
 
-		// 🍪 overwrite access token cookie
-		c.Cookie(&fiber.Cookie{
-			Name:     "access_token",
-			Value:    newAccessToken,
-			HTTPOnly: true,
-			SameSite: "None",
-			Secure:   false,
-			Expires:  time.Now().Add(15 * time.Minute),
-		})
+		// set new cookies
+		setAuthCookie(
+			c,
+			"access_token",
+			newAccessToken,
+			time.Now().Add(15*time.Minute),
+		)
 
-		// 🍪 overwrite refresh token cookie
-		c.Cookie(&fiber.Cookie{
-			Name:     "refresh_token",
-			Value:    newRefreshToken,
-			HTTPOnly: true,
-			SameSite: "None",
-			Secure:   false,
-			Expires:  expiresAt,
-		})
+		setAuthCookie(
+			c,
+			"refresh_token",
+			newRefreshToken,
+			expiresAt,
+		)
 
 		return c.JSON(fiber.Map{
 			"message": "token refreshed successfully",
-			"access_token":newAccessToken,
-			"refresh_token":newRefreshToken,
 		})
 	}
 }

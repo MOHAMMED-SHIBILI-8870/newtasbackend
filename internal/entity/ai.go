@@ -1,10 +1,12 @@
 package entity
 
-import "google.golang.org/genai"
+type Message struct {
+	Role string `json:"role"`
+	Text string `json:"text"`
+}
 
 type ChatRequest struct {
-	// We pass the conversation history array directly in Gemini format
-	Messages []*genai.Content `json:"messages"`
+	Messages []Message `json:"messages"`
 }
 
 type ChatResponse struct {

@@ -7,20 +7,22 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-
 func TripRoutes(app fiber.Router, h *handler.TripHandler) {
 
-	// Logged-in users + admin can view
-	trip := app.Group("/trips", middleware.AuthMiddleware())
+	// PUBLIC ROUTES 
 
-	trip.Get("/my-trips", h.GetUserTrips)
-	trip.Get("/", h.GetAllTrips)
-	trip.Get("/:id", h.GetTripByID)
+	publicTrips := app.Group("/trips")
+	publicTrips.Get("/", h.GetAllTrips)        
+	publicTrips.Get("/:name", h.GetTripByName) 
 
-	// Admin only
-	adminTrip := app.Group("/admin/trips",middleware.AuthMiddleware(),middleware.RoleMiddleware("admin"))
+	
 
-	adminTrip.Post("/", h.CreateTrip)
-	adminTrip.Patch("/:id", h.UpdateTrip)
-	adminTrip.Delete("/:id", h.DeleteTrip)
+	adminTrips := app.Group("/admin/trips", middleware.AuthMiddleware(), middleware.RoleMiddleware("admin"))
+
+	adminTrips.Post("/", h.CreateTrip)         // Create master template trip
+	adminTrips.Get("/", h.GetAllTrips)         // Admin view all master templates
+	adminTrips.Patch("/:id", h.UpdateTrip)     // Admin modifies master details/plans
+	adminTrips.Delete("/:id", h.DeleteTrip)   // Admin removes a master package
+
+	
 }

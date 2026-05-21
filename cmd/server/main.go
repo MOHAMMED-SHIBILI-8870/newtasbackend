@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"log"
+
 	"backend/internal/config"
 	"backend/internal/handler"
 	"backend/internal/handler/routes"
@@ -12,19 +15,42 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
+
+	"google.golang.org/genai"
 )
 
 func main() {
-	// 1. Database Connection & Migrations
+
+	config.LoadEnv()
 	config.ConnectDB()
-	db := config.DB // Assuming your config package exports the GORM DB instance
-	migrations.Migrations()
+
+	db := config.DB
+
+	err := migrations.Migrations()
+	if err != nil {
+		panic(err)
+	}
 	seed.SeedUsers()
+	apiKey := config.GetEnv("GEMINI_API_KEY", "")
+
+	if apiKey == "" {
+		log.Fatal("GEMINI_API_KEY not found")
+	}
+
+	ctx := context.Background()
+
+	geminiClient, err := genai.NewClient(ctx, &genai.ClientConfig{
+		APIKey: apiKey,
+	})
+
+	if err != nil {
+		log.Fatalf("Failed to initialize Gemini Client: %v", err)
+	}
 
 	app := fiber.New()
 
-	// 2. Middleware
-	app.Use(logger.New()) // This will print every request to your terminal
+	app.Use(logger.New())
+
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     "http://localhost:5173,http://localhost:5174",
 		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
@@ -32,20 +58,40 @@ func main() {
 		AllowCredentials: true,
 	}))
 
-	// trip
+	// Repositories (Data Access Layer)
+	
 	tripRepo := repository.NewTripRepository(db)
+	userRepo := repository.NewUserRepository(db)
+	bookingRepo := repository.NewBookingRepository(db) // 👈 Added booking repo
+
+	
+	// Usecases (Business Logic Layer)
+	
 	tripUsecase := usecase.NewTripUsecase(tripRepo)
+	adminUsecase := usecase.NewAdminUsecase(userRepo)
+	// 👈 Initialize the booking business workflow with both required repos
+	bookingUsecase := usecase.NewBookingUsecase(bookingRepo, tripRepo) 
+
+	
+	// Handlers (Controller Layer)
+	
 	tripHandler := handler.NewTripHandler(tripUsecase)
-	// Admin
-	userRepo := repository.NewUserRepository(db)         
-    adminUsecase := usecase.NewAdminUsecase(userRepo)
-    adminHandler := handler.NewAdminHandler(adminUsecase)
+	adminHandler := handler.NewAdminHandler(adminUsecase)
+	aiHandler := handler.NewAIHandler(geminiClient)
+	bookingHandler := handler.NewBookingHandler(bookingUsecase) 
 
-	// 4. Register Routes
-	routes.AuthRoutes(app,db)
-	routes.TripRoutes(app, tripHandler) 
+	
+	// Routes Injection Mapping
+	
+	routes.AuthRoutes(app, db)
+	routes.TripRoutes(app, tripHandler)
 	routes.AdminRoutes(app, adminHandler)
+	routes.SetupAIRoutes(app, aiHandler)
+	routes.BookingRoutes(app, bookingHandler)
 
-	// 5. Start Server
-	app.Listen(":8997")
+	// Start Server
+	
+	log.Println("Server running on port 8997")
+
+	log.Fatal(app.Listen(":8997"))
 }

@@ -1,75 +1,166 @@
-// internal/handler/ai_handler.go
 package handler
 
 import (
-	"backend/internal/entity"
 	"context"
-	"log"
+	"fmt"
+	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"google.golang.org/genai"
 )
 
 type AIHandler struct {
-	GeminiClient *genai.Client
+	client *genai.Client
 }
 
 func NewAIHandler(client *genai.Client) *AIHandler {
-	return &AIHandler{GeminiClient: client}
+	return &AIHandler{
+		client: client,
+	}
 }
 
-const TravelAgentSystemPrompt = `
-You are an expert AI Travel Agent. Your job is to help users design a custom travel package when they don't like the default ones.
-Follow these rules:
-1. Be enthusiastic, polite, and helpful.
-2. Ask questions one or two at a time so you don't overwhelm the user.
-3. Find out: Destination preferences, budget, who is traveling, trip duration, and favorite activities.
-4. If the user provides a custom typed answer, acknowledge it and adapt.
-5. Once you have enough information, generate a clear, day-by-day customized itinerary with a summary.
-`
+// ================= REQUEST STRUCT =================
 
-func (h *AIHandler) CustomTripChat(c *fiber.Ctx) error {
-	var req entity.ChatRequest
+type TripRequest struct {
+	From        string `json:"from"`
+	To          string `json:"to"`
+	Days        int    `json:"days"`
+	TripType    string `json:"trip_type"`
+	BudgetLevel string `json:"budget_level"`
+	Members     int    `json:"members"`
 
-	// Parse incoming message history from frontend
+	// Optional Admin Features
+	Children   int    `json:"children"`
+	HotelType  string `json:"hotel_type"`
+	Transport  string `json:"transport"`
+	CreatedBy  string `json:"created_by"` // user / admin
+}
+
+// ================= GENERATE TRIP PLAN =================
+
+func (h *AIHandler) GenerateTripPlan(c *fiber.Ctx) error {
+
+	var req TripRequest
+
+	// ================= PARSE BODY =================
+
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid request payload",
+		return c.Status(400).JSON(fiber.Map{
+			"error": "Invalid request body",
 		})
 	}
 
-	// Use gemini-2.5-flash: it's fast, smart, and fully supported on the free tier
-	model := "gemini-2.5-flash"
+	// ================= VALIDATION =================
 
-	// Define runtime configurations like your system prompt instructions
-	config := &genai.GenerateContentConfig{
-		SystemInstruction: &genai.Content{
-			Parts: []*genai.Part{{Text: TravelAgentSystemPrompt}},
-		},
+	if req.From == "" || req.To == "" {
+		return c.Status(400).JSON(fiber.Map{
+			"error": "From and To locations are required",
+		})
 	}
 
-	// Request content generation using history context
-	resp, err := h.GeminiClient.Models.GenerateContent(
-		context.Background(),
-		model,
-		req.Messages,
-		config,
+	if req.Days <= 0 {
+		req.Days = 1
+	}
+
+	if req.Members <= 0 {
+		req.Members = 1
+	}
+
+	if req.CreatedBy == "" {
+		req.CreatedBy = "user"
+	}
+
+	// ================= AI PROMPT =================
+
+	prompt := fmt.Sprintf(`
+Create a concise %s trip plan.
+
+Trip Details:
+- From: %s
+- To: %s
+- Duration: %d days
+- Travelers: %d people
+- Children: %d
+- Budget Level: %s
+- Hotel Preference: %s
+- Transport Preference: %s
+- Created By: %s
+
+Include:
+1. Day-wise itinerary
+2. Tourist attractions
+3. Food recommendations
+4. Transport suggestions
+5. Hotel suggestions
+6. Estimated total budget
+7. Useful travel tips
+
+Keep the response clean, short, and easy to read.
+`,
+		req.TripType,
+		req.From,
+		req.To,
+		req.Days,
+		req.Members,
+		req.Children,
+		req.BudgetLevel,
+		req.HotelType,
+		req.Transport,
+		req.CreatedBy,
 	)
 
+	// ================= TIMEOUT =================
+
+	ctx, cancel := context.WithTimeout(
+		context.Background(),
+		30*time.Second,
+	)
+	defer cancel()
+
+	// ================= GEMINI REQUEST =================
+
+	resp, err := h.client.Models.GenerateContent(
+		ctx,
+		"gemini-2.5-flash",
+		genai.Text(prompt),
+		nil,
+	)
+
+	// ================= ERROR HANDLING =================
+
 	if err != nil {
-		log.Printf("Gemini API Error: %v", err)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to generate response from Gemini AI",
+
+		fmt.Println("GEMINI ERROR:", err)
+
+		// Rate limit handling
+		if strings.Contains(err.Error(), "429") ||
+			strings.Contains(err.Error(), "RESOURCE_EXHAUSTED") {
+
+			return c.Status(429).JSON(fiber.Map{
+				"error": "Rate limit exceeded. Please wait and try again.",
+			})
+		}
+
+		return c.Status(500).JSON(fiber.Map{
+			"error":   "Failed to generate AI response",
+			"details": err.Error(),
 		})
 	}
 
-	// Extract the text output from the response candidates safely
-	var aiReply string
-	if len(resp.Candidates) > 0 && len(resp.Candidates[0].Content.Parts) > 0 {
-		aiReply = resp.Candidates[0].Content.Parts[0].Text
-	} else {
-		aiReply = "I am having trouble processing that right now. Let's try again!"
+	// ================= EMPTY RESPONSE =================
+
+	if resp == nil {
+		return c.Status(500).JSON(fiber.Map{
+			"error": "Empty AI response",
+		})
 	}
 
-	return c.JSON(entity.ChatResponse{Reply: aiReply})
+	// ================= SUCCESS RESPONSE =================
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"created_by": req.CreatedBy,
+		"result":  resp.Text(),
+	})
 }

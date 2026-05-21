@@ -10,8 +10,10 @@ func Migrations() error {
 		&entity.User{},
 		&entity.RefreshToken{},
 		&entity.OTP{},
-		&entity.Trip{},
-		&entity.ChatRequest{},
 		&entity.ChatResponse{},
+		&entity.Trip{},
+		&entity.TripPlan{},
+		&entity.Booking{},
+		&entity.BookingPlan{},
 	)
 }
