@@ -50,28 +50,58 @@ func (u *TripUsecase) UpdateTrip(ctx context.Context, id uint, input entity.Upda
 	}
 
 	// Update primitives via pointers
-	if input.From != nil { existing.From = *input.From }
-	if input.To != nil { existing.To = *input.To }
-	if input.StartDate != nil { existing.StartDate = *input.StartDate }
-	if input.EndDate != nil { existing.EndDate = *input.EndDate }
-	if input.TripType != nil { existing.TripType = *input.TripType }
-	if input.BudgetLevel != nil { existing.BudgetLevel = *input.BudgetLevel }
-	if input.HotelType != nil { existing.HotelType = *input.HotelType }
-	if input.Transport != nil { existing.Transport = *input.Transport }
-	if input.ItineraryRaw != nil { existing.ItineraryRaw = *input.ItineraryRaw }
-	if input.ImageURL != nil { existing.ImageURL = *input.ImageURL }
-	if input.Status != nil { existing.Status = *input.Status }
+	if input.From != nil {
+		existing.From = *input.From
+	}
+	if input.To != nil {
+		existing.To = *input.To
+	}
+	if input.StartDate != nil {
+		existing.StartDate = *input.StartDate
+	}
+	if input.EndDate != nil {
+		existing.EndDate = *input.EndDate
+	}
+	if input.TripType != nil {
+		existing.TripType = *input.TripType
+	}
+	if input.BudgetLevel != nil {
+		existing.BudgetLevel = *input.BudgetLevel
+	}
+	if input.HotelType != nil {
+		existing.HotelType = *input.HotelType
+	}
+	if input.Transport != nil {
+		existing.Transport = *input.Transport
+	}
+	if input.ItineraryRaw != nil {
+		existing.ItineraryRaw = *input.ItineraryRaw
+	}
+	if input.ImageURL != nil {
+		existing.ImageURL = *input.ImageURL
+	}
+	if input.Status != nil {
+		existing.Status = *input.Status
+	}
 
 	if input.Duration != nil {
-		if *input.Duration <= 0 { return errors.New("duration must be at least 1 day") }
+		if *input.Duration <= 0 {
+			return errors.New("duration must be at least 1 day")
+		}
 		existing.Duration = *input.Duration
 	}
 	if input.Price != nil {
-		if *input.Price < 0 { return errors.New("price cannot be negative") }
+		if *input.Price < 0 {
+			return errors.New("price cannot be negative")
+		}
 		existing.Price = *input.Price
 	}
-	if input.Members != nil { existing.Members = *input.Members }
-	if input.Children != nil { existing.Children = *input.Children }
+	if input.Members != nil {
+		existing.Members = *input.Members
+	}
+	if input.Children != nil {
+		existing.Children = *input.Children
+	}
 
 	// Override specific timeline structures directly if updated
 	if input.Plans != nil {

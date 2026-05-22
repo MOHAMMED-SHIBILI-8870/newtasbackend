@@ -1,69 +1,118 @@
 package middleware
 
 import (
+	"backend/internal/repository"
+	"backend/internal/response"
 	"backend/internal/usecase"
+	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
 )
 
-// AuthMiddleware validates JWT and sets user info in context
-func AuthMiddleware() fiber.Handler {
+func extractToken(c *fiber.Ctx) (string, error) {
+	authHeader := c.Get("Authorization")
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		return strings.TrimPrefix(authHeader, "Bearer "), nil
+	}
+
+	if token := c.Cookies("access_token"); token != "" {
+		return token, nil
+	}
+
+	return "", fiber.NewError(fiber.StatusUnauthorized, "missing authorization token")
+}
+
+// AuthMiddleware validates JWT, checks user state, and sets auth context.
+func AuthMiddleware(userRepo repository.UserRepository) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-
-		// Get Authorization header
-		authHeader := c.Get("Authorization")
-		if authHeader == "" {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"error": "missing Authorization header",
-			})
+		token, err := extractToken(c)
+		if err != nil {
+			return response.Fail(c, fiber.StatusUnauthorized, "invalid token", err)
 		}
 
-		// Check Bearer format
-		if !strings.HasPrefix(authHeader, "Bearer ") {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"error": "invalid Authorization format",
-			})
-		}
-
-		// Extract token
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-
-		// Validate JWT
 		userID, role, err := usecase.ValidateJwt(token)
 		if err != nil {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"error": "invalid or expired token",
-			})
+			return response.Fail(c, fiber.StatusUnauthorized, "invalid token", err)
 		}
 
-		// Store values in context
-		c.Locals("user_id", uint(userID))
-		c.Locals("role", role)
+		user, err := userRepo.GetByID(c.Context(), userID)
+		if err != nil {
+			return response.Fail(c, fiber.StatusUnauthorized, "invalid token", err)
+		}
+
+		if user == nil {
+			return response.Fail(c, fiber.StatusUnauthorized, "invalid token", nil)
+		}
+
+		if user.IsBlocked {
+			return response.Fail(c, fiber.StatusForbidden, "account is blocked", nil)
+		}
+
+		if !user.IsVerified {
+			return response.Fail(c, fiber.StatusForbidden, "account is not verified", nil)
+		}
+
+		currentRole := usecase.NormalizeRole(user.Role)
+		if currentRole != role {
+			return response.Fail(c, fiber.StatusUnauthorized, "token role mismatch", nil)
+		}
+
+		c.Locals(AuthUserIDKey, user.ID)
+		c.Locals(AuthRoleKey, currentRole)
+		c.Locals(AuthEmailKey, user.Email)
 
 		return c.Next()
 	}
 }
+
 func RoleMiddleware(allowedRoles ...string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-
-		// Get role from context
-		role, ok := c.Locals("role").(string)
+		role, ok := c.Locals(AuthRoleKey).(string)
 		if !ok {
-			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-				"error": "role not found",
-			})
+			return response.Fail(c, fiber.StatusForbidden, "role not found", nil)
 		}
 
-		// Check if role is allowed
+		role = usecase.NormalizeRole(role)
 		for _, allowed := range allowedRoles {
-			if role == allowed {
+			if role == usecase.NormalizeRole(allowed) {
 				return c.Next()
 			}
 		}
 
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-			"error": "access denied",
-		})
+		return response.Fail(c, fiber.StatusForbidden, "access denied", nil)
 	}
+}
+
+func GetAuthUserID(c *fiber.Ctx) uint {
+	if v, ok := c.Locals(AuthUserIDKey).(uint); ok {
+		return v
+	}
+	switch v := c.Locals(AuthUserIDKey).(type) {
+	case int:
+		return uint(v)
+	case int64:
+		return uint(v)
+	case float64:
+		return uint(v)
+	case string:
+		id, _ := strconv.Atoi(v)
+		return uint(id)
+	default:
+		return 0
+	}
+}
+
+func GetAuthRole(c *fiber.Ctx) string {
+	if v, ok := c.Locals(AuthRoleKey).(string); ok {
+		return usecase.NormalizeRole(v)
+	}
+	return ""
+}
+
+func GetAuthEmail(c *fiber.Ctx) string {
+	if v, ok := c.Locals(AuthEmailKey).(string); ok {
+		return v
+	}
+	return ""
 }

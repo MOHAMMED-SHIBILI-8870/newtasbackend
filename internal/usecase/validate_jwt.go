@@ -1,9 +1,10 @@
 package usecase
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -11,16 +12,14 @@ import (
 func ValidateJwt(tokenStr string) (uint, string, error) {
 
 	secretKey := os.Getenv("JWT_SECRETKEY")
-	fmt.Println("SECRET:", secretKey)
 	if secretKey == "" {
-		return 0, "", fmt.Errorf("JWT secret not configured")
+		return 0, "", errors.New("JWT secret not configured")
 	}
 
-	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (any, error) {
+	token, err := jwt.ParseWithClaims(tokenStr, &AuthClaims{}, func(token *jwt.Token) (any, error) {
 
-		// safer validation
 		if token.Method.Alg() != jwt.SigningMethodHS256.Alg() {
-			return nil, fmt.Errorf("unexpected signing method")
+			return nil, jwt.ErrTokenSignatureInvalid
 		}
 
 		return []byte(secretKey), nil
@@ -31,39 +30,30 @@ func ValidateJwt(tokenStr string) (uint, string, error) {
 	}
 
 	if token == nil || !token.Valid {
-		return 0, "", fmt.Errorf("invalid token")
+		return 0, "", jwt.ErrTokenInvalidClaims
 	}
 
-	claims, ok := token.Claims.(jwt.MapClaims)
+	claims, ok := token.Claims.(*AuthClaims)
 	if !ok {
-		return 0, "", fmt.Errorf("invalid claims")
+		return 0, "", jwt.ErrTokenInvalidClaims
 	}
 
-	// user_id safe conversion
 	var userID uint
-	switch v := claims["user_id"].(type) {
-	case float64:
-		userID = uint(v)
-	case string:
-		id, err := strconv.Atoi(v)
+	if claims.UserID != 0 {
+		userID = claims.UserID
+	} else if claims.Subject != "" {
+		id, err := strconv.Atoi(claims.Subject)
 		if err != nil {
-			return 0, "", fmt.Errorf("invalid userId in token")
+			return 0, "", err
 		}
 		userID = uint(id)
-	default:
-		return 0, "", fmt.Errorf("invalid userId in token")
 	}
 
-	// role check
-	roleVal, exists := claims["role"]
-	if !exists {
-		return 0, "", fmt.Errorf("role missing in token")
+	if userID == 0 {
+		return 0, "", jwt.ErrTokenInvalidClaims
 	}
 
-	role, ok := roleVal.(string)
-	if !ok {
-		return 0, "", fmt.Errorf("invalid role in token")
-	}
+	role := NormalizeRole(strings.TrimSpace(claims.Role))
 
 	return userID, role, nil
 }

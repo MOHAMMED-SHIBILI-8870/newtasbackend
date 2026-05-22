@@ -1,8 +1,8 @@
 package seed
 
 import (
-	"backend/internal/entity"
 	"backend/internal/config"
+	"backend/internal/entity"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -11,21 +11,15 @@ func SeedUsers() {
 
 	users := []entity.User{
 		{
-			FullName: "Admin User",
-			Email:    "admin@example.com",
-			Role:     "admin",
+			FullName:   "Admin User",
+			Email:      "admin@example.com",
+			Role:       "admin",
 			IsVerified: true,
 		},
 		{
-			FullName: "Guide User",
-			Email:    "guide@example.com",
-			Role:     "guide",
-			IsVerified: true,
-		},
-		{
-			FullName: "Manager",
-			Email:    "manager@example.com",
-			Role:     "manager",
+			FullName:   "Normal User",
+			Email:      "user@example.com",
+			Role:       "user",
 			IsVerified: true,
 		},
 	}

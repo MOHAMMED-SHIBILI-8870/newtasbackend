@@ -11,9 +11,11 @@ func Migrations() error {
 		&entity.RefreshToken{},
 		&entity.OTP{},
 		&entity.ChatResponse{},
+		&entity.AITripRequest{},
 		&entity.Trip{},
 		&entity.TripPlan{},
 		&entity.Booking{},
 		&entity.BookingPlan{},
+		&entity.Notification{},
 	)
 }

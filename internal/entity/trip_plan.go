@@ -7,10 +7,10 @@ import (
 )
 
 type TripPlan struct {
-	ID          uint           `gorm:"primaryKey" json:"id"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
-	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
+	ID        uint           `gorm:"primaryKey" json:"id"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
 	TripID      uint   `gorm:"not null;index" json:"trip_id"`
 	DayNumber   int    `gorm:"not null" json:"day_number"`
@@ -20,9 +20,8 @@ type TripPlan struct {
 	StartTime   string `gorm:"type:varchar(50)" json:"start_time"`
 	EndTime     string `gorm:"type:varchar(50)" json:"end_time"`
 
-	
-	Category    string  `gorm:"type:varchar(50)" json:"category"`
-	Cost        float64 `gorm:"type:decimal(10,2)" json:"cost"`
+	Category string  `gorm:"type:varchar(50)" json:"category"`
+	Cost     float64 `gorm:"type:decimal(10,2)" json:"cost"`
 
-	Trip        Trip `gorm:"foreignKey:TripID" json:"-"`
+	Trip Trip `gorm:"foreignKey:TripID" json:"-"`
 }

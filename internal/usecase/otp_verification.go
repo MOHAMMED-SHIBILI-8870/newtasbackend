@@ -136,7 +136,7 @@ func VerifyOTPHandler(c *fiber.Ctx) error {
 		return c.Status(400).JSON(err.Error())
 	}
 
-	ok, err :=VerifyOTP(body.Email, body.OTP, body.Purpose)
+	ok, err := VerifyOTP(body.Email, body.OTP, body.Purpose)
 	if err != nil {
 		return c.Status(400).JSON(err.Error())
 	}

@@ -182,24 +182,24 @@ func (r *userRepository) CreateUser(
 // infrastructure/repository/admin_repo_impl.go
 
 func (r *userRepository) DeleteUser(userID uint) error {
-    // Start a transaction
-    return r.db.Transaction(func(tx *gorm.DB) error {
-        
-        // 1. Delete associated refresh tokens first
-        if err := tx.Where("user_id = ?", userID).Delete(&entity.RefreshToken{}).Error; err != nil {
-            return err // Rollback if this fails
-        }
+	// Start a transaction
+	return r.db.Transaction(func(tx *gorm.DB) error {
 
-        // 2. Now delete the user
-        result := tx.Delete(&entity.User{}, userID)
-        if result.Error != nil {
-            return result.Error
-        }
+		// 1. Delete associated refresh tokens first
+		if err := tx.Where("user_id = ?", userID).Delete(&entity.RefreshToken{}).Error; err != nil {
+			return err // Rollback if this fails
+		}
 
-        if result.RowsAffected == 0 {
-            return errors.New("user not found")
-        }
+		// 2. Now delete the user
+		result := tx.Delete(&entity.User{}, userID)
+		if result.Error != nil {
+			return result.Error
+		}
 
-        return nil // Commit the transaction
-    })
+		if result.RowsAffected == 0 {
+			return errors.New("user not found")
+		}
+
+		return nil // Commit the transaction
+	})
 }

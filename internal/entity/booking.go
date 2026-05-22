@@ -34,3 +34,12 @@ type BookingPlan struct {
 type UpdateBookingPlanInput struct {
 	Plans []BookingPlan `json:"plans"`
 }
+
+type BookingResponse struct {
+	ID          uint          `json:"id"`
+	Status      string        `json:"status"`
+	UserID      uint          `json:"user_id"`
+	TripID      uint          `json:"trip_id"`
+	CreatedAt   time.Time     `json:"created_at"`
+	CustomPlans []BookingPlan `json:"custom_plans"`
+}

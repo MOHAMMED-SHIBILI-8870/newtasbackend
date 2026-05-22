@@ -12,7 +12,6 @@ type TripPlanRepository interface {
 	Delete(ctx context.Context, id uint) error
 }
 
-
 type tripPlanRepository struct {
 	db *gorm.DB
 }
@@ -26,11 +25,13 @@ func (r *tripPlanRepository) Create(ctx context.Context, plan *entity.TripPlan) 
 }
 
 func (r *tripPlanRepository) GetByTripID(ctx context.Context, tripID uint) ([]entity.TripPlan, error) {
+
 	var plans []entity.TripPlan
 
 	err := r.db.WithContext(ctx).
 		Where("trip_id = ?", tripID).
 		Order("day_number ASC").
+		Order("start_time ASC").
 		Find(&plans).Error
 
 	return plans, err

@@ -19,7 +19,7 @@ type AdminUsecase interface {
 	ToggleUserBlock(ctx context.Context, targetID uint) (string, bool, error)
 	ChangeUserRole(ctx context.Context, targetID uint, newRole string) error
 	CreateUserByAdmin(ctx context.Context, req entity.AdminCreateUserRequest) (entity.User, error)
-	RemoveUser(adminID uint, targetID uint) error
+	RemoveUser(ctx context.Context, adminID uint, targetID uint) error
 }
 
 type adminUsecase struct {
@@ -32,21 +32,16 @@ func NewAdminUsecase(r repository.UserRepository) AdminUsecase {
 	}
 }
 
-//
 // 📄 Fetch users
-//
 func (u *adminUsecase) FetchUsers(
 	ctx context.Context,
 	role string,
 	search string,
 ) ([]entity.User, error) {
-
-	return u.repo.GetUsers(ctx, role, search)
+	return u.repo.GetUsers(ctx, NormalizeRole(role), search)
 }
 
-//
 // 🔒 Toggle block / unblock user
-//
 func (u *adminUsecase) ToggleUserBlock(
 	ctx context.Context,
 	targetID uint,
@@ -61,8 +56,7 @@ func (u *adminUsecase) ToggleUserBlock(
 		return "", false, fmt.Errorf("user not found")
 	}
 
-	// Prevent blocking admins
-	if user.Role == "admin" {
+	if NormalizeRole(user.Role) == "admin" {
 		return "", false, fmt.Errorf("cannot block admin user")
 	}
 
@@ -76,51 +70,34 @@ func (u *adminUsecase) ToggleUserBlock(
 	return user.FullName, newStatus, nil
 }
 
-//
 // 🔄 Change user role
-//
 func (u *adminUsecase) ChangeUserRole(
 	ctx context.Context,
 	targetID uint,
 	newRole string,
 ) error {
-
-	validRoles := map[string]bool{
-		"user":    true,
-		"guide":   true,
-		"manager": true,
-		"admin":   true,
-	}
-
-	if !validRoles[newRole] {
+	normalized := NormalizeRole(newRole)
+	if normalized != "user" && normalized != "admin" {
 		return fmt.Errorf("invalid role: %s", newRole)
 	}
 
-	return u.repo.UpdateUserRole(ctx, targetID, newRole)
+	return u.repo.UpdateUserRole(ctx, targetID, normalized)
 }
 
-//
 // ➕ Create new user by admin
-//
 func (u *adminUsecase) CreateUserByAdmin(
 	ctx context.Context,
 	req entity.AdminCreateUserRequest,
 ) (entity.User, error) {
-
-	// Validate roles
-	validRoles := map[string]bool{
-		"user":    true,
-		"guide":   true,
-		"manager": true,
-		"admin":   true,
-	}
-
-	if !validRoles[req.Role] {
+	normalized := NormalizeRole(req.Role)
+	if normalized != "user" && normalized != "admin" {
 		return entity.User{}, fmt.Errorf("invalid role")
 	}
 
-	// Check if email already exists
-	existingUser, _ := u.repo.GetByEmail(ctx, req.Email)
+	existingUser, err := u.repo.GetByEmail(ctx, req.Email)
+	if err != nil {
+		return entity.User{}, err
+	}
 	if existingUser != nil {
 		return entity.User{}, fmt.Errorf("email already exists")
 	}
@@ -139,7 +116,7 @@ func (u *adminUsecase) CreateUserByAdmin(
 		FullName:     req.FullName,
 		Email:        req.Email,
 		HashPassword: string(hashedPassword),
-		Role:         req.Role,
+		Role:         normalized,
 		IsBlocked:    false,
 		IsVerified:   true,
 	}
@@ -154,12 +131,15 @@ func (u *adminUsecase) CreateUserByAdmin(
 }
 
 // usecase/admin_usecase.go
-func (u *adminUsecase) RemoveUser(adminID uint, targetID uint) error {
-    // 1. Prevent self-deletion
-    if adminID == targetID {
-        return errors.New("security risk: you cannot delete your own account")
-    }
+func (u *adminUsecase) RemoveUser(ctx context.Context, adminID uint, targetID uint) error {
+	if adminID == targetID {
+		return errors.New("security risk: you cannot delete your own account")
+	}
 
-    // 2. Call the repository
-    return u.repo.DeleteUser(targetID)
+	target, err := u.repo.GetByID(ctx, targetID)
+	if err == nil && target != nil && NormalizeRole(target.Role) == "admin" {
+		return errors.New("cannot delete admin user")
+	}
+
+	return u.repo.DeleteUser(targetID)
 }

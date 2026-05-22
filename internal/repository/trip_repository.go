@@ -49,7 +49,7 @@ func (r *tripRepository) GetByName(ctx context.Context, name string) (*entity.Tr
 	var trip entity.Trip
 	err := r.db.WithContext(ctx).
 		Preload("Plans").
-		Where("to ILIKE ?", "%"+name+"%").
+		Where("LOWER(\"from\") LIKE LOWER(?) OR LOWER(\"to\") LIKE LOWER(?)", "%"+name+"%", "%"+name+"%").
 		First(&trip).Error
 
 	if err != nil {
@@ -71,4 +71,3 @@ func (r *tripRepository) Update(ctx context.Context, trip *entity.Trip) error {
 func (r *tripRepository) Delete(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&entity.Trip{}, id).Error
 }
-
