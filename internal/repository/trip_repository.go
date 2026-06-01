@@ -7,11 +7,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// TripRepository defines the interface for database operations
 type TripRepository interface {
 	Create(ctx context.Context, trip *entity.Trip) error
 	GetByID(ctx context.Context, id uint) (*entity.Trip, error)
-	GetByUserID(ctx context.Context, userID uint) ([]entity.Trip, error)
+	GetByName(ctx context.Context, name string) (*entity.Trip, error)
+	GetAll(ctx context.Context) ([]entity.Trip, error)
 	Update(ctx context.Context, trip *entity.Trip) error
 	Delete(ctx context.Context, id uint) error
 }
@@ -20,37 +20,54 @@ type tripRepository struct {
 	db *gorm.DB
 }
 
-// NewTripRepository creates a new instance of the repository
 func NewTripRepository(db *gorm.DB) TripRepository {
 	return &tripRepository{db: db}
 }
 
-// Create inserts a new trip into the database
 func (r *tripRepository) Create(ctx context.Context, trip *entity.Trip) error {
+	// GORM automatically saves associated Plans if populated inside the struct
 	return r.db.WithContext(ctx).Create(trip).Error
 }
 
-// GetByID finds a single trip and preloads the owner (User) details
 func (r *tripRepository) GetByID(ctx context.Context, id uint) (*entity.Trip, error) {
 	var trip entity.Trip
-	err := r.db.WithContext(ctx).Preload("User").First(&trip, id).Error
+	err := r.db.WithContext(ctx).
+		Preload("Plans").
+		First(&trip, id).Error
 	return &trip, err
 }
 
-// GetByUserID fetches all trips belonging to a specific user
-func (r *tripRepository) GetByUserID(ctx context.Context, userID uint) ([]entity.Trip, error) {
+func (r *tripRepository) GetAll(ctx context.Context) ([]entity.Trip, error) {
 	var trips []entity.Trip
-	err := r.db.WithContext(ctx).Where("user_id = ?", userID).Find(&trips).Error
+	err := r.db.WithContext(ctx).
+		Preload("Plans").
+		Find(&trips).Error
 	return trips, err
 }
 
-// Update saves changes to an existing trip record
-func (r *tripRepository) Update(ctx context.Context, trip *entity.Trip) error {
-	return r.db.WithContext(ctx).Save(trip).Error
+func (r *tripRepository) GetByName(ctx context.Context, name string) (*entity.Trip, error) {
+	var trip entity.Trip
+	err := r.db.WithContext(ctx).
+		Preload("Plans").
+		Where("LOWER(\"from\") LIKE LOWER(?) OR LOWER(\"to\") LIKE LOWER(?)", "%"+name+"%", "%"+name+"%").
+		First(&trip).Error
+
+	if err != nil {
+		return nil, err
+	}
+	return &trip, nil
 }
 
-// Delete marks a trip as deleted (Soft Delete)
+func (r *tripRepository) Update(ctx context.Context, trip *entity.Trip) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Drop existing plan associations first to avoid duplicate appending blocks during updates
+		if err := tx.Where("trip_id = ?", trip.ID).Delete(&entity.TripPlan{}).Error; err != nil {
+			return err
+		}
+		return tx.Save(trip).Error
+	})
+}
+
 func (r *tripRepository) Delete(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&entity.Trip{}, id).Error
 }
-

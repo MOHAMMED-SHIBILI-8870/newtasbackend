@@ -2,11 +2,13 @@ package handler
 
 import (
 	"backend/internal/entity"
+	"backend/internal/response"
 	"backend/internal/usecase"
-	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"net/url"
 )
 
 type TripHandler struct {
@@ -17,159 +19,91 @@ func NewTripHandler(u *usecase.TripUsecase) *TripHandler {
 	return &TripHandler{usecase: u}
 }
 
-// CreateTrip: POST /trips
+func tripStatusFromErr(err error) int {
+	if err == nil {
+		return fiber.StatusBadRequest
+	}
+
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "not found"):
+		return fiber.StatusNotFound
+	case strings.Contains(msg, "required"), strings.Contains(msg, "invalid"):
+		return fiber.StatusBadRequest
+	default:
+		return fiber.StatusUnprocessableEntity
+	}
+}
+
 func (h *TripHandler) CreateTrip(c *fiber.Ctx) error {
 	var trip entity.Trip
-
-	// 1. Parse JSON body from React
 	if err := c.BodyParser(&trip); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid JSON format",
-		})
+		return response.Fail(c, fiber.StatusBadRequest, "invalid request body", err)
 	}
 
-	userVal := c.Locals("user_id")
-
-	var userID uint
-	switch v := userVal.(type) {
-	case float64:
-		userID = uint(v)
-	case int:
-		userID = uint(v)
-	case uint:
-		userID = v
-	default:
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "invalid user_id type",
-		})
-	}
-
-	trip.UserId = userID
-
-	if trip.Duration <= 0 {
-		return errors.New("duration must be at least 1 day")
-	}
-
-	// 3. Delegate to Usecase
 	if err := h.usecase.CreateTrip(c.Context(), &trip); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": err.Error(),
-		})
+		return response.Fail(c, tripStatusFromErr(err), "failed to create trip", err)
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(trip)
+	return response.Success(c, fiber.StatusCreated, "trip created successfully", trip)
 }
 
-// GetTripByID: GET /trips/:id
-func (h *TripHandler) GetTripByID(c *fiber.Ctx) error {
+func (h *TripHandler) GetTripByName(c *fiber.Ctx) error {
+
+	name, err := url.QueryUnescape(c.Params("name"))
+	if err != nil {
+		return response.Fail(c, fiber.StatusBadRequest, "invalid trip name", err)
+	}
+
+	if name == "" {
+		return response.Fail(c, fiber.StatusBadRequest, "trip name is required", nil)
+	}
+
+	trip, err := h.usecase.GetTripByName(c.Context(), name)
+	if err != nil {
+		return response.Fail(c, fiber.StatusNotFound, "trip not found", err)
+	}
+
+	return response.Success(c, fiber.StatusOK, "trip loaded successfully", trip)
+}
+
+func (h *TripHandler) GetAllTrips(c *fiber.Ctx) error {
+	trips, err := h.usecase.GetAllTrips(c.Context())
+	if err != nil {
+		return response.Fail(c, fiber.StatusInternalServerError, "failed to load trips", err)
+	}
+
+	return response.Success(c, fiber.StatusOK, "trips loaded successfully", trips)
+}
+
+func (h *TripHandler) UpdateTrip(c *fiber.Ctx) error {
+
 	id, err := strconv.Atoi(c.Params("id"))
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid ID format",
-		})
+		return response.Fail(c, fiber.StatusBadRequest, "invalid trip id", err)
 	}
-
-	trip, err := h.usecase.GetTripDetails(c.Context(), uint(id))
-	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": "Trip not found",
-		})
-	}
-
-	return c.JSON(trip)
-}
-
-// GetUserTrips: GET /trips/my-trips
-func (h *TripHandler) GetUserTrips(c *fiber.Ctx) error {
-	userVal := c.Locals("user_id")
-
-	var userID uint
-	switch v := userVal.(type) {
-	case float64:
-		userID = uint(v)
-	case int:
-		userID = uint(v)
-	case uint:
-		userID = v
-	default:
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "invalid user_id type",
-		})
-	}
-
-	trips, err := h.usecase.GetTripsByOwner(c.Context(), userID)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to fetch trips",
-		})
-	}
-
-	return c.JSON(trips)
-}
-
-// UpdateTrip: PUT /trips/:id
-func (h *TripHandler) UpdateTrip(c *fiber.Ctx) error {
-	id, _ := strconv.Atoi(c.Params("id"))
 
 	var input entity.UpdateTripInput
 	if err := c.BodyParser(&input); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid input",
-		})
+		return response.Fail(c, fiber.StatusBadRequest, "invalid request body", err)
 	}
 
-	userVal := c.Locals("user_id")
-
-	var userID uint
-	switch v := userVal.(type) {
-	case float64:
-		userID = uint(v)
-	case int:
-		userID = uint(v)
-	case uint:
-		userID = v
-	default:
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "invalid user_id type",
-		})
+	if err := h.usecase.UpdateTrip(c.Context(), uint(id), input); err != nil {
+		return response.Fail(c, tripStatusFromErr(err), "failed to update trip", err)
 	}
 
-	// pass clean data
-	if err := h.usecase.UpdateTrip(c.Context(), uint(id), input, userID); err != nil {
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-			"error": err.Error(),
-		})
-	}
-
-	return c.JSON(fiber.Map{
-		"message": "updated successfully",
-	})
+	return response.Success(c, fiber.StatusOK, "trip updated successfully", nil)
 }
 
-// DeleteTrip: DELETE /trips/:id
 func (h *TripHandler) DeleteTrip(c *fiber.Ctx) error {
-	id, _ := strconv.Atoi(c.Params("id"))
-	userVal := c.Locals("user_id")
-
-	var userID uint
-	switch v := userVal.(type) {
-	case float64:
-		userID = uint(v)
-	case int:
-		userID = uint(v)
-	case uint:
-		userID = v
-	default:
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "invalid user_id type",
-		})
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return response.Fail(c, fiber.StatusBadRequest, "invalid trip id", err)
 	}
 
-	if err := h.usecase.DeleteTrip(c.Context(), uint(id), userID); err != nil {
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-			"error": "Unauthorized or delete failed",
-		})
+	if err := h.usecase.DeleteTrip(c.Context(), uint(id)); err != nil {
+		return response.Fail(c, tripStatusFromErr(err), "failed to delete trip", err)
 	}
 
-	return c.SendStatus(fiber.StatusNoContent) 
+	return response.Success(c, fiber.StatusOK, "trip deleted successfully", nil)
 }

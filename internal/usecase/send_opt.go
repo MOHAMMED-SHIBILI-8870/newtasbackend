@@ -1,6 +1,5 @@
 package usecase
 
-
 import (
 	"errors"
 	"fmt"
@@ -16,11 +15,11 @@ func SentOTPEmail(toEmail, otp, purpose string) error {
 	host := os.Getenv("SMTP_HOST")
 	port := os.Getenv("SMTP_PORT")
 
-	if from == "" || password == "" || host == "" || port == ""{
+	if from == "" || password == "" || host == "" || port == "" {
 		return errors.New("email configuration missing")
-	} 
+	}
 
-	auth := smtp.PlainAuth("",from,password,host)
+	auth := smtp.PlainAuth("", from, password, host)
 
 	subject := "your OTP Code"
 	body := fmt.Sprintf(
@@ -36,9 +35,8 @@ func SentOTPEmail(toEmail, otp, purpose string) error {
 			body,
 	)
 
-
 	return smtp.SendMail(
-		host +":" +port,
+		host+":"+port,
 		auth,
 		from,
 		[]string{toEmail},

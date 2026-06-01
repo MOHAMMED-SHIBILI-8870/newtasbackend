@@ -1,16 +1,25 @@
+// ============================
+// internal/usecase/admin_usecase.go
+// ============================
+
 package usecase
 
 import (
 	"backend/internal/entity"
 	"backend/internal/repository"
 	"context"
+	"errors"
 	"fmt"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 type AdminUsecase interface {
 	FetchUsers(ctx context.Context, role string, search string) ([]entity.User, error)
 	ToggleUserBlock(ctx context.Context, targetID uint) (string, bool, error)
 	ChangeUserRole(ctx context.Context, targetID uint, newRole string) error
+	CreateUserByAdmin(ctx context.Context, req entity.AdminCreateUserRequest) (entity.User, error)
+	RemoveUser(ctx context.Context, adminID uint, targetID uint) error
 }
 
 type adminUsecase struct {
@@ -18,20 +27,26 @@ type adminUsecase struct {
 }
 
 func NewAdminUsecase(r repository.UserRepository) AdminUsecase {
-	return &adminUsecase{repo: r}
+	return &adminUsecase{
+		repo: r,
+	}
 }
 
-//
-// 📄 Fetch users (with filters)
-//
-func (u *adminUsecase) FetchUsers(ctx context.Context, role string, search string) ([]entity.User, error) {
-	return u.repo.GetUsers(ctx, role, search)
+// 📄 Fetch users
+func (u *adminUsecase) FetchUsers(
+	ctx context.Context,
+	role string,
+	search string,
+) ([]entity.User, error) {
+	return u.repo.GetUsers(ctx, NormalizeRole(role), search)
 }
 
-//
-// 🔒 Toggle Block / Unblock user
-//
-func (u *adminUsecase) ToggleUserBlock(ctx context.Context, targetID uint) (string, bool, error) {
+// 🔒 Toggle block / unblock user
+func (u *adminUsecase) ToggleUserBlock(
+	ctx context.Context,
+	targetID uint,
+) (string, bool, error) {
+
 	user, err := u.repo.GetByID(ctx, targetID)
 	if err != nil {
 		return "", false, err
@@ -41,7 +56,7 @@ func (u *adminUsecase) ToggleUserBlock(ctx context.Context, targetID uint) (stri
 		return "", false, fmt.Errorf("user not found")
 	}
 
-	if user.Role == "admin" {
+	if NormalizeRole(user.Role) == "admin" {
 		return "", false, fmt.Errorf("cannot block admin user")
 	}
 
@@ -54,21 +69,77 @@ func (u *adminUsecase) ToggleUserBlock(ctx context.Context, targetID uint) (stri
 
 	return user.FullName, newStatus, nil
 }
-//
+
 // 🔄 Change user role
-//
-func (u *adminUsecase) ChangeUserRole(ctx context.Context, targetID uint, newRole string) error {
-
-	validRoles := map[string]bool{
-		"user": true,
-		"guide": true,
-		"manager": true,
-		"admin": true,
-	}
-
-	if !validRoles[newRole] {
+func (u *adminUsecase) ChangeUserRole(
+	ctx context.Context,
+	targetID uint,
+	newRole string,
+) error {
+	normalized := NormalizeRole(newRole)
+	if !IsValidRole(normalized) {
 		return fmt.Errorf("invalid role: %s", newRole)
 	}
 
-	return u.repo.UpdateUserRole(ctx, targetID, newRole)
+	return u.repo.UpdateUserRole(ctx, targetID, normalized)
+}
+
+// ➕ Create new user by admin
+func (u *adminUsecase) CreateUserByAdmin(
+	ctx context.Context,
+	req entity.AdminCreateUserRequest,
+) (entity.User, error) {
+	normalized := NormalizeRole(req.Role)
+	if !IsValidRole(normalized) {
+		return entity.User{}, fmt.Errorf("invalid role")
+	}
+
+	existingUser, err := u.repo.GetByEmail(ctx, req.Email)
+	if err != nil {
+		return entity.User{}, err
+	}
+	if existingUser != nil {
+		return entity.User{}, fmt.Errorf("email already exists")
+	}
+
+	// Hash password
+	hashedPassword, err := bcrypt.GenerateFromPassword(
+		[]byte(req.Password),
+		bcrypt.DefaultCost,
+	)
+
+	if err != nil {
+		return entity.User{}, err
+	}
+
+	newUser := entity.User{
+		FullName:     req.FullName,
+		Email:        req.Email,
+		HashPassword: string(hashedPassword),
+		Role:         normalized,
+		IsBlocked:    false,
+		IsVerified:   true,
+	}
+
+	// Save user
+	err = u.repo.CreateUser(ctx, &newUser)
+	if err != nil {
+		return entity.User{}, err
+	}
+
+	return newUser, nil
+}
+
+// usecase/admin_usecase.go
+func (u *adminUsecase) RemoveUser(ctx context.Context, adminID uint, targetID uint) error {
+	if adminID == targetID {
+		return errors.New("security risk: you cannot delete your own account")
+	}
+
+	target, err := u.repo.GetByID(ctx, targetID)
+	if err == nil && target != nil && NormalizeRole(target.Role) == "admin" {
+		return errors.New("cannot delete admin user")
+	}
+
+	return u.repo.DeleteUser(targetID)
 }

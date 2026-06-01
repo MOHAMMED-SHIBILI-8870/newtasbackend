@@ -7,23 +7,73 @@ import (
 	"encoding/hex"
 	"errors"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"gorm.io/gorm"
 )
 
-//  Generate Access Token
+const (
+	normalizedAdminRole   = "admin"
+	normalizedAgencyRole  = "agency"
+	normalizedGuideRole   = "guide"
+	normalizedDriverRole  = "driver"
+	normalizedSupportRole = "support"
+	normalizedUserRole    = "user"
+)
+
+type AuthClaims struct {
+	UserID uint   `json:"user_id"`
+	Role   string `json:"role"`
+	jwt.RegisteredClaims
+}
+
+func NormalizeRole(role string) string {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case normalizedAdminRole:
+		return normalizedAdminRole
+	case normalizedAgencyRole:
+		return normalizedAgencyRole
+	case normalizedGuideRole:
+		return normalizedGuideRole
+	case normalizedDriverRole:
+		return normalizedDriverRole
+	case normalizedSupportRole:
+		return normalizedSupportRole
+	case normalizedUserRole:
+		return normalizedUserRole
+	default:
+		return normalizedUserRole
+	}
+}
+
+func IsValidRole(role string) bool {
+	switch NormalizeRole(role) {
+	case normalizedAdminRole, normalizedAgencyRole, normalizedGuideRole, normalizedDriverRole, normalizedSupportRole, normalizedUserRole:
+		return true
+	default:
+		return false
+	}
+}
+
+// Generate Access Token
 func GenerateAccessToken(userID uint, role string) (string, error) {
 	secretKey := os.Getenv("JWT_SECRETKEY")
 	if secretKey == "" {
 		return "", errors.New("JWT secret key not set")
 	}
 
-	claims := jwt.MapClaims{
-		"user_id": userID,
-		"role":    role,
-		"exp":     time.Now().Add(1 * time.Hour).Unix(),
+	now := time.Now().UTC()
+	claims := AuthClaims{
+		UserID: userID,
+		Role:   NormalizeRole(role),
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   strconv.FormatUint(uint64(userID), 10),
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(1 * time.Hour)),
+		},
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -53,7 +103,7 @@ func SaveRefreshToken(db *gorm.DB, userID uint, hashedToken string, expiresAt ti
 	}
 
 	refreshToken := entity.RefreshToken{
-		UserId:    userID,
+		UserID:    userID,
 		Token:     hashedToken,
 		ExpiredAt: expiresAt,
 	}
@@ -90,7 +140,7 @@ func RefreshAccessToken(db *gorm.DB, refreshToken string) (string, error) {
 
 	// get user (you may need repo here)
 	var user entity.User
-	if err := db.First(&user, rt.UserId).Error; err != nil {
+	if err := db.First(&user, rt.UserID).Error; err != nil {
 		return "", err
 	}
 
