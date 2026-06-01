@@ -22,6 +22,12 @@ func SeedUsers() {
 			Role:       "user",
 			IsVerified: true,
 		},
+		{
+			FullName:   "guide",
+			Email:      "guide@example.com",
+			Role:       "guide",
+			IsVerified: true,
+		},
 	}
 
 	for _, u := range users {
