@@ -16,8 +16,12 @@ import (
 )
 
 const (
-	normalizedAdminRole = "admin"
-	normalizedUserRole  = "user"
+	normalizedAdminRole   = "admin"
+	normalizedAgencyRole  = "agency"
+	normalizedGuideRole   = "guide"
+	normalizedDriverRole  = "driver"
+	normalizedSupportRole = "support"
+	normalizedUserRole    = "user"
 )
 
 type AuthClaims struct {
@@ -30,8 +34,27 @@ func NormalizeRole(role string) string {
 	switch strings.ToLower(strings.TrimSpace(role)) {
 	case normalizedAdminRole:
 		return normalizedAdminRole
+	case normalizedAgencyRole:
+		return normalizedAgencyRole
+	case normalizedGuideRole:
+		return normalizedGuideRole
+	case normalizedDriverRole:
+		return normalizedDriverRole
+	case normalizedSupportRole:
+		return normalizedSupportRole
+	case normalizedUserRole:
+		return normalizedUserRole
 	default:
 		return normalizedUserRole
+	}
+}
+
+func IsValidRole(role string) bool {
+	switch NormalizeRole(role) {
+	case normalizedAdminRole, normalizedAgencyRole, normalizedGuideRole, normalizedDriverRole, normalizedSupportRole, normalizedUserRole:
+		return true
+	default:
+		return false
 	}
 }
 

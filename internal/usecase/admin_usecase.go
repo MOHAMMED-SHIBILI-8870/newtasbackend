@@ -77,7 +77,7 @@ func (u *adminUsecase) ChangeUserRole(
 	newRole string,
 ) error {
 	normalized := NormalizeRole(newRole)
-	if normalized != "user" && normalized != "admin" {
+	if !IsValidRole(normalized) {
 		return fmt.Errorf("invalid role: %s", newRole)
 	}
 
@@ -90,7 +90,7 @@ func (u *adminUsecase) CreateUserByAdmin(
 	req entity.AdminCreateUserRequest,
 ) (entity.User, error) {
 	normalized := NormalizeRole(req.Role)
-	if normalized != "user" && normalized != "admin" {
+	if !IsValidRole(normalized) {
 		return entity.User{}, fmt.Errorf("invalid role")
 	}
 

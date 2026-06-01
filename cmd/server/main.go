@@ -41,6 +41,7 @@ func main() {
 	}
 
 	seed.SeedUsers()
+	seed.SeedRBAC()
 
 	var geminiClient *genai.Client
 	apiKey := config.GetEnv("GEMINI_API_KEY", "")
@@ -75,12 +76,26 @@ func main() {
 	bookingRepo := repository.NewBookingRepository(db)
 	notificationRepo := repository.NewNotificationRepository(db)
 	aiTripRequestRepo := repository.NewAITripRequestRepository(db)
+	roleRepo := repository.NewRoleRepository(db)
+	permissionRepo := repository.NewPermissionRepository(db)
+	vehicleRepo := repository.NewVehicleRepository(db)
+	offerRepo := repository.NewOfferRepository(db)
+	reviewRepo := repository.NewReviewRepository(db)
+	complaintRepo := repository.NewComplaintRepository(db)
+	trackingRepo := repository.NewTrackingRepository(db)
 
 	notificationUsecase := usecase.NewNotificationUsecase(notificationRepo)
 	tripUsecase := usecase.NewTripUsecase(tripRepo)
 	tripPlanUsecase := usecase.NewTripPlanUsecase(tripPlanRepo)
 	adminUsecase := usecase.NewAdminUsecase(userRepo)
-	bookingUsecase := usecase.NewBookingUsecase(bookingRepo, tripRepo, notificationUsecase)
+	roleUsecase := usecase.NewRoleUsecase(roleRepo, userRepo)
+	permissionUsecase := usecase.NewPermissionUsecase(permissionRepo, roleRepo, userRepo)
+	vehicleUsecase := usecase.NewVehicleUsecase(vehicleRepo, tripRepo, userRepo)
+	offerUsecase := usecase.NewOfferUsecase(offerRepo)
+	reviewUsecase := usecase.NewReviewUsecase(reviewRepo, bookingRepo, tripRepo)
+	complaintUsecase := usecase.NewComplaintUsecase(complaintRepo, bookingRepo)
+	trackingUsecase := usecase.NewTrackingUsecase(trackingRepo, bookingRepo, vehicleRepo)
+	bookingUsecase := usecase.NewBookingUsecase(bookingRepo, tripRepo, userRepo, offerRepo, db, notificationUsecase)
 	aiTripRequestUsecase := usecase.NewAITripRequestUsecase(aiTripRequestRepo, tripRepo, userRepo, notificationUsecase)
 
 	tripHandler := handler.NewTripHandler(tripUsecase)
@@ -89,9 +104,17 @@ func main() {
 	aiHandler := handler.NewAIHandler(geminiClient, aiTripRequestUsecase)
 	bookingHandler := handler.NewBookingHandler(bookingUsecase)
 	notificationHandler := handler.NewNotificationHandler(notificationUsecase)
+	roleHandler := handler.NewRoleHandler(roleUsecase, permissionUsecase)
+	permissionHandler := handler.NewPermissionHandler(permissionUsecase)
+	vehicleHandler := handler.NewVehicleHandler(vehicleUsecase)
+	offerHandler := handler.NewOfferHandler(offerUsecase)
+	reviewHandler := handler.NewReviewHandler(reviewUsecase)
+	complaintHandler := handler.NewComplaintHandler(complaintUsecase)
+	trackingHandler := handler.NewTrackingHandler(trackingUsecase)
 
 	authMiddleware := middleware.AuthMiddleware(userRepo)
 	adminMiddleware := middleware.RoleMiddleware("admin")
+	permissionMiddleware := middleware.PermissionMiddleware(permissionUsecase)
 
 	routes.AuthRoutes(app, db)
 	routes.TripRoutes(app, tripHandler, authMiddleware, adminMiddleware)
@@ -100,6 +123,12 @@ func main() {
 	routes.SetupAIRoutes(app, aiHandler, authMiddleware, adminMiddleware)
 	routes.BookingRoutes(app, bookingHandler, authMiddleware, adminMiddleware)
 	routes.NotificationRoutes(app, notificationHandler, authMiddleware, adminMiddleware)
+	routes.RBACRoutes(app, roleHandler, permissionHandler, authMiddleware, permissionMiddleware)
+	routes.VehicleRoutes(app, vehicleHandler, authMiddleware, permissionMiddleware)
+	routes.OfferRoutes(app, offerHandler, authMiddleware, permissionMiddleware)
+	routes.ReviewRoutes(app, reviewHandler, authMiddleware, permissionMiddleware)
+	routes.ComplaintRoutes(app, complaintHandler, authMiddleware, permissionMiddleware)
+	routes.TrackingRoutes(app, trackingHandler, authMiddleware, permissionMiddleware)
 
 	log.Println("Server running on port 8997")
 	log.Fatal(app.Listen(":8997"))

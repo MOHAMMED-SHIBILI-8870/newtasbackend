@@ -17,7 +17,7 @@ import (
 )
 
 type AIHandler struct {
-	client *genai.Client
+	client  *genai.Client
 	usecase *usecase.AITripRequestUsecase
 }
 
@@ -311,7 +311,7 @@ func toAITripRequestResponse(request *entity.AITripRequest) dto.AITripRequestRes
 		HotelType:     request.HotelType,
 		Transport:     request.Transport,
 		Prompt:        request.Prompt,
-		GeneratedPlan:  request.GeneratedPlan,
+		GeneratedPlan: request.GeneratedPlan,
 		Status:        request.Status,
 		AdminNote:     request.AdminNote,
 		TripID:        request.TripID,

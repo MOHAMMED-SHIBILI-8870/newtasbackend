@@ -41,12 +41,22 @@ func (h *BookingHandler) BookTrip(c *fiber.Ctx) error {
 		return response.Fail(c, fiber.StatusBadRequest, "invalid trip id", err)
 	}
 
+	var input struct {
+		Seats      int    `json:"seats"`
+		CouponCode string `json:"coupon_code"`
+	}
+	if len(c.Body()) > 0 {
+		if err := c.BodyParser(&input); err != nil {
+			return response.Fail(c, fiber.StatusBadRequest, "invalid request body", err)
+		}
+	}
+
 	userID := middleware.GetAuthUserID(c)
 	if userID == 0 {
 		return response.Fail(c, fiber.StatusUnauthorized, "unauthorized", nil)
 	}
 
-	booking, err := h.usecase.BookTrip(c.Context(), uint(tripID), userID)
+	booking, err := h.usecase.BookTrip(c.Context(), uint(tripID), userID, input.Seats, input.CouponCode)
 	if err != nil {
 		return response.Fail(c, bookingErrorStatus(err), "failed to create booking", err)
 	}
@@ -90,7 +100,6 @@ func (h *BookingHandler) UpdateUserBookingPlans(c *fiber.Ctx) error {
 
 	return response.Success(c, fiber.StatusOK, "booking plans updated successfully", nil)
 }
-
 
 func (h *BookingHandler) GetAllOrders(c *fiber.Ctx) error {
 	orders, err := h.usecase.GetAllOrders(c.Context())

@@ -9,6 +9,7 @@ import (
 
 type BookingRepository interface {
 	CreateBooking(ctx context.Context, booking *entity.Booking) error
+	CreateBookingTx(tx *gorm.DB, booking *entity.Booking) error
 	GetBookingsByUserID(ctx context.Context, userID uint) ([]entity.Booking, error)
 	GetBookingByID(ctx context.Context, id uint) (*entity.Booking, error)
 	UpdateBookingPlans(ctx context.Context, bookingID uint, plans []entity.BookingPlan) error
@@ -25,6 +26,10 @@ func NewBookingRepository(db *gorm.DB) BookingRepository {
 
 func (r *bookingRepository) CreateBooking(ctx context.Context, booking *entity.Booking) error {
 	return r.db.WithContext(ctx).Create(booking).Error
+}
+
+func (r *bookingRepository) CreateBookingTx(tx *gorm.DB, booking *entity.Booking) error {
+	return tx.Create(booking).Error
 }
 
 func (r *bookingRepository) GetBookingsByUserID(ctx context.Context, userID uint) ([]entity.Booking, error) {
