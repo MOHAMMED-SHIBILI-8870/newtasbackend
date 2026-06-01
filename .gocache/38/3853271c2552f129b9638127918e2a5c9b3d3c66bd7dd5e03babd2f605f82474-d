@@ -1,8 +1,0 @@
-./complaint_migration.go
-./migrate.go
-./offer_migration.go
-./permission_migration.go
-./review_migration.go
-./role_migration.go
-./tracking_migration.go
-./vehicle_migration.go
