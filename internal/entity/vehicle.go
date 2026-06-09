@@ -13,7 +13,7 @@ type Vehicle struct {
 	AvailableSeats int       `gorm:"not null" json:"available_seats"`
 	PricePerPerson float64   `gorm:"type:decimal(12,2);not null;default:0" json:"price_per_person"`
 	Status         string    `gorm:"size:30;not null;default:'active';index" json:"status"`
-	TripID         *uint     `gorm:"index" json:"trip_id,omitempty"`
+	TripID         *uint     `gorm:"index;uniqueIndex:idx_vehicle_trip" json:"trip_id,omitempty"`
 	Agency         User      `gorm:"foreignKey:AgencyID;constraint:OnDelete:CASCADE;" json:"-"`
 	Trip           *Trip     `gorm:"foreignKey:TripID;constraint:OnDelete:SET NULL;" json:"-"`
 }

@@ -14,9 +14,12 @@ func Migrations() error {
 		&entity.AITripRequest{},
 		&entity.Trip{},
 		&entity.TripPlan{},
+		&entity.TripSlot{},
 		&entity.Booking{},
 		&entity.BookingPlan{},
 		&entity.Notification{},
+		&entity.Payment{},
+		&entity.Guide{},
 	); err != nil {
 		return err
 	}

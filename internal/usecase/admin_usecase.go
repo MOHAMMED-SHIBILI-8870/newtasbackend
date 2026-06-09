@@ -10,8 +10,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 type AdminUsecase interface {
@@ -23,12 +25,16 @@ type AdminUsecase interface {
 }
 
 type adminUsecase struct {
-	repo repository.UserRepository
+	repo     repository.UserRepository
+	roleRepo repository.RoleRepository
+	db       *gorm.DB
 }
 
-func NewAdminUsecase(r repository.UserRepository) AdminUsecase {
+func NewAdminUsecase(r repository.UserRepository, roleRepo repository.RoleRepository, db *gorm.DB) AdminUsecase {
 	return &adminUsecase{
-		repo: r,
+		repo:     r,
+		roleRepo: roleRepo,
+		db:       db,
 	}
 }
 
@@ -46,6 +52,9 @@ func (u *adminUsecase) ToggleUserBlock(
 	ctx context.Context,
 	targetID uint,
 ) (string, bool, error) {
+	if u.repo == nil || u.db == nil {
+		return "", false, errors.New("admin service unavailable")
+	}
 
 	user, err := u.repo.GetByID(ctx, targetID)
 	if err != nil {
@@ -61,8 +70,27 @@ func (u *adminUsecase) ToggleUserBlock(
 	}
 
 	newStatus := !user.IsBlocked
+	// Blocking a user must also revoke every live refresh token so the account
+	// cannot continue minting access tokens after the status change.
+	err = u.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&entity.User{}).
+			Where("id = ?", targetID).
+			Update("is_blocked", newStatus)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("user not found")
+		}
 
-	err = u.repo.UpdateUserStatus(ctx, targetID, newStatus)
+		if newStatus {
+			if err := tx.Where("user_id = ?", targetID).Delete(&entity.RefreshToken{}).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
 	if err != nil {
 		return "", false, err
 	}
@@ -76,12 +104,34 @@ func (u *adminUsecase) ChangeUserRole(
 	targetID uint,
 	newRole string,
 ) error {
-	normalized := NormalizeRole(newRole)
+	if u.repo == nil || u.roleRepo == nil || u.db == nil {
+		return errors.New("admin service unavailable")
+	}
+
+	normalized := strings.ToLower(strings.TrimSpace(newRole))
 	if !IsValidRole(normalized) {
 		return fmt.Errorf("invalid role: %s", newRole)
 	}
 
-	return u.repo.UpdateUserRole(ctx, targetID, normalized)
+	role, err := u.roleRepo.GetByName(ctx, normalized)
+	if err != nil {
+		return err
+	}
+	if role == nil {
+		return fmt.Errorf("role not found")
+	}
+
+	user, err := u.repo.GetByID(ctx, targetID)
+	if err != nil {
+		return err
+	}
+	if user == nil {
+		return fmt.Errorf("user not found")
+	}
+
+	return u.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return syncPrimaryRoleTx(tx, user.ID, role.ID, role.Name)
+	})
 }
 
 // ➕ Create new user by admin
@@ -89,9 +139,22 @@ func (u *adminUsecase) CreateUserByAdmin(
 	ctx context.Context,
 	req entity.AdminCreateUserRequest,
 ) (entity.User, error) {
-	normalized := NormalizeRole(req.Role)
+	if u.repo == nil || u.roleRepo == nil || u.db == nil {
+		return entity.User{}, errors.New("admin service unavailable")
+	}
+
+	normalized := strings.ToLower(strings.TrimSpace(req.Role))
 	if !IsValidRole(normalized) {
 		return entity.User{}, fmt.Errorf("invalid role")
+	}
+
+	roleName := NormalizeRole(normalized)
+	role, err := u.roleRepo.GetByName(ctx, roleName)
+	if err != nil {
+		return entity.User{}, err
+	}
+	if role == nil {
+		return entity.User{}, fmt.Errorf("role not found")
 	}
 
 	existingUser, err := u.repo.GetByEmail(ctx, req.Email)
@@ -116,13 +179,20 @@ func (u *adminUsecase) CreateUserByAdmin(
 		FullName:     req.FullName,
 		Email:        req.Email,
 		HashPassword: string(hashedPassword),
-		Role:         normalized,
+		Role:         role.Name,
 		IsBlocked:    false,
 		IsVerified:   true,
 	}
 
-	// Save user
-	err = u.repo.CreateUser(ctx, &newUser)
+	// The admin-created user is written together with the user_roles row so the
+	// cached role column and the join-table source of truth never drift apart.
+	err = u.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&newUser).Error; err != nil {
+			return err
+		}
+
+		return syncPrimaryRoleTx(tx, newUser.ID, role.ID, role.Name)
+	})
 	if err != nil {
 		return entity.User{}, err
 	}
@@ -141,5 +211,5 @@ func (u *adminUsecase) RemoveUser(ctx context.Context, adminID uint, targetID ui
 		return errors.New("cannot delete admin user")
 	}
 
-	return u.repo.DeleteUser(targetID)
+	return u.repo.DeleteUser(ctx, targetID)
 }

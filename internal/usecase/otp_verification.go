@@ -1,8 +1,9 @@
 package usecase
 
 import (
-	"backend/internal/config"
 	"backend/internal/entity"
+	"backend/internal/response"
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ===============================
@@ -38,7 +40,13 @@ func HashOTP(otp string) string {
 // ===============================
 // CREATE OTP
 // ===============================
-func CreateOTP(db *gorm.DB, email string, purpose string, expiryMinutes int) (string, error) {
+func CreateOTP(db *gorm.DB, ctx context.Context, email string, purpose string, expiryMinutes int) (string, error) {
+	if db == nil {
+		return "", errors.New("database unavailable")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	otp, err := GenerateOTP()
 	if err != nil {
@@ -47,30 +55,26 @@ func CreateOTP(db *gorm.DB, email string, purpose string, expiryMinutes int) (st
 
 	otpHash := HashOTP(otp)
 
-	tx := db.Begin()
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// invalidate old OTPs
+		if err := tx.Model(&entity.OTP{}).
+			Where("email = ? AND purpose = ? AND is_used = false", email, purpose).
+			Update("is_used", true).Error; err != nil {
+			return err
+		}
 
-	// invalidate old OTPs
-	if err := tx.Model(&entity.OTP{}).
-		Where("email = ? AND purpose = ? AND is_used = false", email, purpose).
-		Update("is_used", true).Error; err != nil {
-		tx.Rollback()
+		newOTP := entity.OTP{
+			Email:     email,
+			OTPCode:   otpHash,
+			Purpose:   purpose,
+			IsUsed:    false,
+			ExpiresAt: time.Now().Add(time.Minute * time.Duration(expiryMinutes)),
+		}
+
+		return tx.Create(&newOTP).Error
+	}); err != nil {
 		return "", err
 	}
-
-	newOTP := entity.OTP{
-		Email:     email,
-		OTPCode:   otpHash,
-		Purpose:   purpose,
-		IsUsed:    false,
-		ExpiresAt: time.Now().Add(time.Minute * time.Duration(expiryMinutes)),
-	}
-
-	if err := tx.Create(&newOTP).Error; err != nil {
-		tx.Rollback()
-		return "", err
-	}
-
-	tx.Commit()
 
 	// return RAW OTP (for sending via email)
 	return otp, nil
@@ -79,15 +83,21 @@ func CreateOTP(db *gorm.DB, email string, purpose string, expiryMinutes int) (st
 // ===============================
 // VERIFY OTP
 // ===============================
-func VerifyOTP(email string, otp string, purpose string) (bool, error) {
+func VerifyOTP(db *gorm.DB, ctx context.Context, email string, otp string, purpose string) (bool, error) {
+	if db == nil {
+		return false, errors.New("database unavailable")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
-	err := config.DB.Transaction(func(tx *gorm.DB) error {
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 
 		var record entity.OTP
 		hashed := HashOTP(otp)
 
 		// find OTP
-		if err := tx.Where(
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(
 			"email = ? AND purpose = ? AND otp_code = ? AND is_used = false AND expires_at > ?",
 			email, purpose, hashed, time.Now(),
 		).
@@ -115,6 +125,11 @@ func VerifyOTP(email string, otp string, purpose string) (bool, error) {
 			}
 		}
 
+		// Remove stale OTP rows for the same email/purpose once the code has been consumed.
+		if err := tx.Where("email = ? AND purpose = ?", email, purpose).Delete(&entity.OTP{}).Error; err != nil {
+			return err
+		}
+
 		return nil
 	})
 
@@ -125,24 +140,25 @@ func VerifyOTP(email string, otp string, purpose string) (bool, error) {
 	return true, nil
 }
 
-func VerifyOTPHandler(c *fiber.Ctx) error {
-	var body struct {
-		Email   string `json:"email"`
-		OTP     string `json:"otp"`
-		Purpose string `json:"purpose"`
-	}
+func VerifyOTPHandler(db *gorm.DB) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		var body struct {
+			Email   string `json:"email"`
+			OTP     string `json:"otp"`
+			Purpose string `json:"purpose"`
+		}
 
-	if err := c.BodyParser(&body); err != nil {
-		return c.Status(400).JSON(err.Error())
-	}
+		if err := c.BodyParser(&body); err != nil {
+			return response.Fail(c, fiber.StatusBadRequest, "invalid request body", err)
+		}
 
-	ok, err := VerifyOTP(body.Email, body.OTP, body.Purpose)
-	if err != nil {
-		return c.Status(400).JSON(err.Error())
-	}
+		ok, err := VerifyOTP(db, c.Context(), body.Email, body.OTP, body.Purpose)
+		if err != nil {
+			return response.Fail(c, fiber.StatusBadRequest, "invalid or expired OTP", err)
+		}
 
-	return c.JSON(fiber.Map{
-		"success": ok,
-		"message": "OTP verified successfully",
-	})
+		return response.Success(c, fiber.StatusOK, "OTP verified successfully", fiber.Map{
+			"success": ok,
+		})
+	}
 }

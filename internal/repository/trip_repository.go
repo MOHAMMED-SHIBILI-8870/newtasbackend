@@ -14,6 +14,7 @@ type TripRepository interface {
 	GetAll(ctx context.Context) ([]entity.Trip, error)
 	Update(ctx context.Context, trip *entity.Trip) error
 	Delete(ctx context.Context, id uint) error
+	SearchSimilarTrips(ctx context.Context,destination string) ([]entity.Trip, error)
 }
 
 type tripRepository struct {
@@ -70,4 +71,17 @@ func (r *tripRepository) Update(ctx context.Context, trip *entity.Trip) error {
 
 func (r *tripRepository) Delete(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&entity.Trip{}, id).Error
+}
+
+func (r *tripRepository) SearchSimilarTrips(ctx context.Context,destination string) ([]entity.Trip, error) {
+
+    var trips []entity.Trip
+
+    err := r.db.WithContext(ctx).
+        Preload("Plans").
+        Where("LOWER(\"to\") LIKE LOWER(?)", "%"+destination+"%").
+        Limit(5).
+        Find(&trips).Error
+
+    return trips, err
 }

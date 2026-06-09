@@ -7,18 +7,41 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"gorm.io/gorm"
 )
 
 type RoleUsecase struct {
 	roleRepo repository.RoleRepository
 	userRepo repository.UserRepository
+	db       *gorm.DB
 }
 
-func NewRoleUsecase(roleRepo repository.RoleRepository, userRepo repository.UserRepository) *RoleUsecase {
+func NewRoleUsecase(roleRepo repository.RoleRepository, userRepo repository.UserRepository, db *gorm.DB) *RoleUsecase {
 	return &RoleUsecase{
 		roleRepo: roleRepo,
 		userRepo: userRepo,
+		db:       db,
 	}
+}
+
+// syncPrimaryRoleTx keeps the join table and cached role column aligned in one transaction.
+func syncPrimaryRoleTx(tx *gorm.DB, userID uint, roleID uint, roleName string) error {
+	if err := tx.Where("user_id = ?", userID).Delete(&entity.UserRole{}).Error; err != nil {
+		return err
+	}
+
+	if err := tx.Create(&entity.UserRole{
+		UserID:    userID,
+		RoleID:    roleID,
+		IsPrimary: true,
+	}).Error; err != nil {
+		return err
+	}
+
+	return tx.Model(&entity.User{}).
+		Where("id = ?", userID).
+		Update("role", roleName).Error
 }
 
 func (u *RoleUsecase) ListRoles(ctx context.Context) ([]entity.Role, error) {
@@ -30,10 +53,11 @@ func (u *RoleUsecase) CreateRole(ctx context.Context, role *entity.Role) error {
 		return errors.New("role is required")
 	}
 
-	role.Name = NormalizeRole(role.Name)
-	if !IsValidRole(role.Name) {
+	normalized := strings.ToLower(strings.TrimSpace(role.Name))
+	if !IsValidRole(normalized) {
 		return fmt.Errorf("invalid role")
 	}
+	role.Name = NormalizeRole(normalized)
 
 	existing, err := u.roleRepo.GetByName(ctx, role.Name)
 	if err != nil {
@@ -67,10 +91,11 @@ func (u *RoleUsecase) UpdateRole(ctx context.Context, id uint, role *entity.Role
 	}
 
 	if strings.TrimSpace(role.Name) != "" {
-		normalized := NormalizeRole(role.Name)
+		normalized := strings.ToLower(strings.TrimSpace(role.Name))
 		if !IsValidRole(normalized) {
 			return fmt.Errorf("invalid role")
 		}
+		normalized = NormalizeRole(normalized)
 		if normalized != existing.Name {
 			return errors.New("role name cannot be changed")
 		}
@@ -88,6 +113,9 @@ func (u *RoleUsecase) DeleteRole(ctx context.Context, id uint) error {
 	if id == 0 {
 		return errors.New("role id is required")
 	}
+	if u.db == nil {
+		return errors.New("database unavailable")
+	}
 
 	role, err := u.roleRepo.GetByID(ctx, id)
 	if err != nil {
@@ -101,11 +129,11 @@ func (u *RoleUsecase) DeleteRole(ctx context.Context, id uint) error {
 		return fmt.Errorf("default roles cannot be deleted")
 	}
 
-	users, err := u.userRepo.GetUsers(ctx, role.Name, "")
-	if err != nil {
+	var count int64
+	if err := u.db.WithContext(ctx).Model(&entity.UserRole{}).Where("role_id = ?", id).Count(&count).Error; err != nil {
 		return err
 	}
-	if len(users) > 0 {
+	if count > 0 {
 		return errors.New("role is assigned to users")
 	}
 
@@ -115,6 +143,9 @@ func (u *RoleUsecase) DeleteRole(ctx context.Context, id uint) error {
 func (u *RoleUsecase) AssignRoleToUser(ctx context.Context, userID uint, roleID uint) error {
 	if userID == 0 || roleID == 0 {
 		return errors.New("user and role are required")
+	}
+	if u.db == nil {
+		return errors.New("database unavailable")
 	}
 
 	role, err := u.roleRepo.GetByID(ctx, roleID)
@@ -133,11 +164,9 @@ func (u *RoleUsecase) AssignRoleToUser(ctx context.Context, userID uint, roleID 
 		return fmt.Errorf("user not found")
 	}
 
-	if err := u.userRepo.UpdateUserRole(ctx, userID, role.Name); err != nil {
-		return err
-	}
-
-	return u.roleRepo.AssignRoleToUser(ctx, userID, roleID)
+	return u.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return syncPrimaryRoleTx(tx, userID, role.ID, role.Name)
+	})
 }
 
 func (u *RoleUsecase) GetUserRoles(ctx context.Context, userID uint) ([]entity.Role, error) {

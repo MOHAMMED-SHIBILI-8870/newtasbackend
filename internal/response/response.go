@@ -1,6 +1,10 @@
 package response
 
-import "github.com/gofiber/fiber/v2"
+import (
+	"log"
+
+	"github.com/gofiber/fiber/v2"
+)
 
 type Envelope struct {
 	Success bool   `json:"success"`
@@ -23,6 +27,7 @@ func Fail(c *fiber.Ctx, status int, message string, err error) error {
 		Message: message,
 	}
 	if err != nil {
+		log.Printf("request failed: %s: %v", message, err)
 		payload.Error = err.Error()
 	}
 
@@ -41,7 +46,8 @@ func FiberErrorHandler(c *fiber.Ctx, err error) error {
 		Message: message,
 	}
 	if err != nil {
-		payload.Error = err.Error()
+		log.Printf("fiber error: %v", err)
+		payload.Error = message
 	}
 	return c.Status(status).JSON(payload)
 }

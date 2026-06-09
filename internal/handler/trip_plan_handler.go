@@ -42,23 +42,21 @@ func (h *TripPlanHandler) CreateTripPlan(c *fiber.Ctx) error {
 		return response.Fail(c, fiber.StatusBadRequest, "invalid request body", err)
 	}
 
-	for _, plan := range plans {
-
-		if err := h.usecase.CreateTripPlan(c.Context(), &plan); err != nil {
-			return response.Fail(
-				c,
-				tripPlanStatusFromErr(err),
-				"failed to create trip plans",
-				err,
-			)
-		}
+	createdPlans, err := h.usecase.CreateTripPlans(c.Context(), plans)
+	if err != nil {
+		return response.Fail(
+			c,
+			tripPlanStatusFromErr(err),
+			"failed to create trip plans",
+			err,
+		)
 	}
 
 	return response.Success(
 		c,
 		fiber.StatusCreated,
 		"trip plans created successfully",
-		plans,
+		createdPlans,
 	)
 }
 

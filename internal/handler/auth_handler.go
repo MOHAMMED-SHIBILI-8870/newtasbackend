@@ -1,16 +1,25 @@
 package handler
 
 import (
-	"backend/internal/config"
 	"backend/internal/dto"
 	"backend/internal/entity"
 	"backend/internal/response"
 	"backend/internal/usecase"
+	"errors"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
 )
+
+type AuthHandler struct {
+	db *gorm.DB
+}
+
+func NewAuthHandler(db *gorm.DB) *AuthHandler {
+	return &AuthHandler{db: db}
+}
 
 func setAuthCookie(c *fiber.Ctx, name string, value string, exp time.Time) {
 	c.Cookie(&fiber.Cookie{
@@ -35,7 +44,41 @@ func userToResponse(user entity.User) dto.AuthUserResponse {
 	}
 }
 
-func Register(c *fiber.Ctx) error {
+func authTokenStatusFromErr(err error) int {
+	if err == nil {
+		return fiber.StatusUnauthorized
+	}
+
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "blocked"):
+		return fiber.StatusForbidden
+	case strings.Contains(msg, "not verified"):
+		return fiber.StatusForbidden
+	case strings.Contains(msg, "not found"):
+		return fiber.StatusNotFound
+	default:
+		return fiber.StatusUnauthorized
+	}
+}
+
+func refreshTokenStatusFromErr(err error) int {
+	if err == nil {
+		return fiber.StatusUnauthorized
+	}
+
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "blocked"):
+		return fiber.StatusForbidden
+	case strings.Contains(msg, "not verified"):
+		return fiber.StatusForbidden
+	default:
+		return fiber.StatusUnauthorized
+	}
+}
+
+func (h *AuthHandler) Register(c *fiber.Ctx) error {
 	var input dto.RegisterRequest
 	if err := c.BodyParser(&input); err != nil {
 		return response.Fail(c, fiber.StatusBadRequest, "invalid request body", err)
@@ -49,8 +92,10 @@ func Register(c *fiber.Ctx) error {
 	}
 
 	var existing entity.User
-	if err := config.DB.Where("email = ?", input.Email).First(&existing).Error; err == nil {
+	if err := h.db.Where("email = ?", input.Email).First(&existing).Error; err == nil {
 		return response.Fail(c, fiber.StatusConflict, "email already registered", nil)
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return response.Fail(c, fiber.StatusInternalServerError, "failed to check existing user", err)
 	}
 
 	hashpass, err := usecase.HashPassword(input.Password)
@@ -66,13 +111,11 @@ func Register(c *fiber.Ctx) error {
 		IsVerified:   false,
 	}
 
-	if err := config.DB.Create(&user).Error; err != nil {
+	if err := h.db.Create(&user).Error; err != nil {
 		return response.Fail(c, fiber.StatusInternalServerError, "could not create user", err)
 	}
 
-	_ = config.DB.Where("user_id = ? AND purpose = ?", user.ID, "signup").Delete(&entity.OTP{}).Error
-
-	otp, err := usecase.CreateOTP(config.DB, input.Email, "signup", 5)
+	otp, err := usecase.CreateOTP(h.db, c.Context(), input.Email, "signup", 5)
 	if err != nil {
 		return response.Fail(c, fiber.StatusInternalServerError, "could not generate OTP", err)
 	}
@@ -86,7 +129,7 @@ func Register(c *fiber.Ctx) error {
 	})
 }
 
-func VerifyOTPHandler(c *fiber.Ctx) error {
+func (h *AuthHandler) VerifyOTPHandler(c *fiber.Ctx) error {
 	var input dto.OTPRequest
 	if err := c.BodyParser(&input); err != nil {
 		return response.Fail(c, fiber.StatusBadRequest, "invalid request body", err)
@@ -97,28 +140,19 @@ func VerifyOTPHandler(c *fiber.Ctx) error {
 	}
 
 	var user entity.User
-	if err := config.DB.Where("email = ?", input.Email).First(&user).Error; err != nil {
+	if err := h.db.Where("email = ?", input.Email).First(&user).Error; err != nil {
 		return response.Fail(c, fiber.StatusNotFound, "user not found", err)
 	}
 
-	valid, err := usecase.VerifyOTP(input.Email, input.OTP, input.Purpose)
+	valid, err := usecase.VerifyOTP(h.db, c.Context(), input.Email, input.OTP, input.Purpose)
 	if err != nil || !valid {
 		return response.Fail(c, fiber.StatusBadRequest, "invalid or expired OTP", err)
 	}
 
-	if input.Purpose == "signup" {
-		_ = config.DB.Model(&user).Updates(map[string]any{
-			"is_verified": true,
-			"updated_at":  time.Now(),
-		}).Error
-	}
-
-	_ = config.DB.Where("user_id = ? AND purpose = ?", user.ID, input.Purpose).Delete(&entity.OTP{}).Error
-
 	return response.Success(c, fiber.StatusOK, "OTP verified successfully", nil)
 }
 
-func Login(c *fiber.Ctx) error {
+func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	var input dto.LoginRequest
 	if err := c.BodyParser(&input); err != nil {
 		return response.Fail(c, fiber.StatusBadRequest, "invalid request body", err)
@@ -129,7 +163,7 @@ func Login(c *fiber.Ctx) error {
 	}
 
 	var user entity.User
-	if err := config.DB.Where("email = ?", input.Email).First(&user).Error; err != nil {
+	if err := h.db.Where("email = ?", input.Email).First(&user).Error; err != nil {
 		return response.Fail(c, fiber.StatusNotFound, "email not found", err)
 	}
 
@@ -154,7 +188,7 @@ func Login(c *fiber.Ctx) error {
 	}
 
 	expiresAt := time.Now().Add(7 * 24 * time.Hour)
-	if err := usecase.SaveRefreshToken(config.DB, user.ID, hashedToken, expiresAt); err != nil {
+	if err := usecase.SaveRefreshToken(h.db, c.Context(), user.ID, hashedToken, expiresAt); err != nil {
 		return response.Fail(c, fiber.StatusInternalServerError, "failed to save refresh token", err)
 	}
 
@@ -167,7 +201,7 @@ func Login(c *fiber.Ctx) error {
 	})
 }
 
-func ForgetPassword(c *fiber.Ctx) error {
+func (h *AuthHandler) ForgetPassword(c *fiber.Ctx) error {
 	var input dto.ForgotPasswordRequest
 	if err := c.BodyParser(&input); err != nil {
 		return response.Fail(c, fiber.StatusBadRequest, "invalid request body", err)
@@ -178,13 +212,11 @@ func ForgetPassword(c *fiber.Ctx) error {
 	}
 
 	var user entity.User
-	if err := config.DB.Where("email = ?", input.Email).First(&user).Error; err != nil {
+	if err := h.db.Where("email = ?", input.Email).First(&user).Error; err != nil {
 		return response.Fail(c, fiber.StatusNotFound, "user not found", err)
 	}
 
-	_ = config.DB.Where("user_id = ? AND purpose = ?", user.ID, "reset_password").Delete(&entity.OTP{}).Error
-
-	otp, err := usecase.CreateOTP(config.DB, input.Email, "reset_password", 5)
+	otp, err := usecase.CreateOTP(h.db, c.Context(), input.Email, "reset_password", 5)
 	if err != nil {
 		return response.Fail(c, fiber.StatusInternalServerError, "could not generate OTP", err)
 	}
@@ -196,7 +228,7 @@ func ForgetPassword(c *fiber.Ctx) error {
 	return response.Success(c, fiber.StatusOK, "OTP sent successfully", nil)
 }
 
-func ResetPassword(c *fiber.Ctx) error {
+func (h *AuthHandler) ResetPassword(c *fiber.Ctx) error {
 	var input dto.ResetPasswordRequest
 	if err := c.BodyParser(&input); err != nil {
 		return response.Fail(c, fiber.StatusBadRequest, "invalid request body", err)
@@ -210,11 +242,11 @@ func ResetPassword(c *fiber.Ctx) error {
 	}
 
 	var user entity.User
-	if err := config.DB.Where("email = ?", input.Email).First(&user).Error; err != nil {
+	if err := h.db.Where("email = ?", input.Email).First(&user).Error; err != nil {
 		return response.Fail(c, fiber.StatusNotFound, "user not found", err)
 	}
 
-	valid, err := usecase.VerifyOTP(input.Email, input.OTP, "reset_password")
+	valid, err := usecase.VerifyOTP(h.db, c.Context(), input.Email, input.OTP, "reset_password")
 	if err != nil || !valid {
 		return response.Fail(c, fiber.StatusBadRequest, "invalid or expired OTP", err)
 	}
@@ -224,7 +256,7 @@ func ResetPassword(c *fiber.Ctx) error {
 		return response.Fail(c, fiber.StatusInternalServerError, "failed to hash password", err)
 	}
 
-	if err := config.DB.Model(&entity.User{}).
+	if err := h.db.Model(&entity.User{}).
 		Where("email = ?", input.Email).
 		Updates(map[string]any{
 			"hash_password": hashedPass,
@@ -233,12 +265,15 @@ func ResetPassword(c *fiber.Ctx) error {
 		return response.Fail(c, fiber.StatusInternalServerError, "failed to update password", err)
 	}
 
-	_ = config.DB.Where("user_id = ? AND purpose = ?", user.ID, "reset_password").Delete(&entity.OTP{}).Error
+	// Password reset invalidates every existing refresh token so stolen sessions cannot persist.
+	if err := usecase.RevokeRefreshTokensByUserID(h.db, c.Context(), user.ID); err != nil {
+		return response.Fail(c, fiber.StatusInternalServerError, "failed to revoke refresh tokens", err)
+	}
 
 	return response.Success(c, fiber.StatusOK, "password reset successfully", nil)
 }
 
-func ResendOtpHandler(c *fiber.Ctx) error {
+func (h *AuthHandler) ResendOtpHandler(c *fiber.Ctx) error {
 	var input dto.ResendOTPRequest
 	if err := c.BodyParser(&input); err != nil {
 		return response.Fail(c, fiber.StatusBadRequest, "invalid request body", err)
@@ -249,7 +284,7 @@ func ResendOtpHandler(c *fiber.Ctx) error {
 	}
 
 	var user entity.User
-	if err := config.DB.Where("email = ?", input.Email).First(&user).Error; err != nil {
+	if err := h.db.Where("email = ?", input.Email).First(&user).Error; err != nil {
 		return response.Fail(c, fiber.StatusNotFound, "user not found", err)
 	}
 
@@ -257,9 +292,7 @@ func ResendOtpHandler(c *fiber.Ctx) error {
 		return response.Fail(c, fiber.StatusBadRequest, "user already verified", nil)
 	}
 
-	_ = config.DB.Where("user_id = ? AND purpose = ?", user.ID, input.Purpose).Delete(&entity.OTP{}).Error
-
-	otp, err := usecase.CreateOTP(config.DB, input.Email, input.Purpose, 5)
+	otp, err := usecase.CreateOTP(h.db, c.Context(), input.Email, input.Purpose, 5)
 	if err != nil {
 		return response.Fail(c, fiber.StatusInternalServerError, "could not generate OTP", err)
 	}
@@ -271,10 +304,10 @@ func ResendOtpHandler(c *fiber.Ctx) error {
 	return response.Success(c, fiber.StatusOK, "OTP resent successfully", nil)
 }
 
-func Logout(c *fiber.Ctx) error {
+func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 	refreshToken := c.Cookies("refresh_token")
 	if refreshToken != "" {
-		_ = usecase.DeleteReToken(config.DB, refreshToken)
+		_ = usecase.DeleteReToken(h.db, c.Context(), refreshToken)
 	}
 
 	setAuthCookie(c, "access_token", "", time.Now().Add(-time.Hour))
@@ -283,46 +316,27 @@ func Logout(c *fiber.Ctx) error {
 	return response.Success(c, fiber.StatusOK, "logged out successfully", nil)
 }
 
-func RefreshTokenHandler(db *gorm.DB) fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		refreshToken := c.Cookies("refresh_token")
-		if refreshToken == "" {
-			return response.Fail(c, fiber.StatusUnauthorized, "missing refresh token", nil)
-		}
-
-		rt, err := usecase.ValidateRefreshToken(db, refreshToken)
-		if err != nil {
-			return response.Fail(c, fiber.StatusUnauthorized, "invalid or expired refresh token", err)
-		}
-
-		_ = usecase.DeleteReToken(db, refreshToken)
-
-		var user entity.User
-		if err := db.First(&user, rt.UserID).Error; err != nil {
-			return response.Fail(c, fiber.StatusNotFound, "user not found", err)
-		}
-
-		newAccessToken, err := usecase.GenerateAccessToken(user.ID, user.Role)
-		if err != nil {
-			return response.Fail(c, fiber.StatusInternalServerError, "failed to generate access token", err)
-		}
-
-		newRefreshToken, hashedToken, err := usecase.GenerateRefreshToken()
-		if err != nil {
-			return response.Fail(c, fiber.StatusInternalServerError, "failed to generate refresh token", err)
-		}
-
-		expiresAt := time.Now().Add(7 * 24 * time.Hour)
-		if err := usecase.SaveRefreshToken(db, user.ID, hashedToken, expiresAt); err != nil {
-			return response.Fail(c, fiber.StatusInternalServerError, "failed to save refresh token", err)
-		}
-
-		setAuthCookie(c, "access_token", newAccessToken, time.Now().Add(15*time.Minute))
-		setAuthCookie(c, "refresh_token", newRefreshToken, expiresAt)
-
-		return response.Success(c, fiber.StatusOK, "token refreshed successfully", dto.AuthResponse{
-			AccessToken: newAccessToken,
-			User:        userToResponse(user),
-		})
+func (h *AuthHandler) RefreshTokenHandler(c *fiber.Ctx) error {
+	refreshToken := c.Cookies("refresh_token")
+	if refreshToken == "" {
+		return response.Fail(c, fiber.StatusUnauthorized, "missing refresh token", nil)
 	}
+
+	user, newRefreshToken, expiresAt, err := usecase.RotateRefreshToken(h.db, c.Context(), refreshToken)
+	if err != nil {
+		return response.Fail(c, refreshTokenStatusFromErr(err), "invalid or expired refresh token", err)
+	}
+
+	newAccessToken, err := usecase.GenerateAccessToken(user.ID, user.Role)
+	if err != nil {
+		return response.Fail(c, fiber.StatusInternalServerError, "failed to generate access token", err)
+	}
+
+	setAuthCookie(c, "access_token", newAccessToken, time.Now().Add(15*time.Minute))
+	setAuthCookie(c, "refresh_token", newRefreshToken, expiresAt)
+
+	return response.Success(c, fiber.StatusOK, "token refreshed successfully", dto.AuthResponse{
+		AccessToken: newAccessToken,
+		User:        userToResponse(*user),
+	})
 }

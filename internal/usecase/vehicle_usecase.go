@@ -7,23 +7,29 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type VehicleUsecase struct {
 	vehicleRepo repository.VehicleRepository
 	tripRepo    repository.TripRepository
 	userRepo    repository.UserRepository
+	db          *gorm.DB
 }
 
 func NewVehicleUsecase(
 	vehicleRepo repository.VehicleRepository,
 	tripRepo repository.TripRepository,
 	userRepo repository.UserRepository,
+	db *gorm.DB,
 ) *VehicleUsecase {
 	return &VehicleUsecase{
 		vehicleRepo: vehicleRepo,
 		tripRepo:    tripRepo,
 		userRepo:    userRepo,
+		db:          db,
 	}
 }
 
@@ -193,42 +199,50 @@ func (u *VehicleUsecase) AssignVehicleToTrip(ctx context.Context, actorID uint, 
 	if vehicleID == 0 || tripID == 0 {
 		return errors.New("vehicle and trip ids are required")
 	}
-
-	vehicle, err := u.vehicleRepo.GetByID(ctx, vehicleID)
-	if err != nil {
-		return err
-	}
-	if vehicle == nil {
-		return fmt.Errorf("vehicle not found")
+	if u.db == nil {
+		return errors.New("database unavailable")
 	}
 
-	if NormalizeRole(actorRole) != "admin" && vehicle.AgencyID != actorID {
-		return errors.New("access denied")
-	}
+	return u.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var vehicle entity.Vehicle
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			First(&vehicle, vehicleID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("vehicle not found")
+			}
+			return err
+		}
 
-	trip, err := u.tripRepo.GetByID(ctx, tripID)
-	if err != nil {
-		return err
-	}
-	if trip == nil {
-		return fmt.Errorf("trip not found")
-	}
+		if NormalizeRole(actorRole) != "admin" && vehicle.AgencyID != actorID {
+			return errors.New("access denied")
+		}
 
-	existingTripVehicle, err := u.vehicleRepo.GetByTripID(ctx, tripID)
-	if err != nil {
-		return err
-	}
-	if existingTripVehicle != nil && existingTripVehicle.ID != vehicleID {
-		return errors.New("trip already has an assigned vehicle")
-	}
+		var trip entity.Trip
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			First(&trip, tripID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("trip not found")
+			}
+			return err
+		}
 
-	if vehicle.TripID != nil && *vehicle.TripID != tripID {
-		return errors.New("vehicle is already assigned to another trip")
-	}
+		var existingTripVehicle entity.Vehicle
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("trip_id = ? AND id <> ?", tripID, vehicleID).
+			First(&existingTripVehicle).Error
+		if err == nil {
+			return errors.New("trip already has an assigned vehicle")
+		}
 
-	vehicle.TripID = &tripID
-	vehicle.Status = normalizeVehicleStatus("assigned")
-	return u.vehicleRepo.Update(ctx, vehicle)
+		if vehicle.TripID != nil && *vehicle.TripID != tripID {
+			return errors.New("vehicle is already assigned to another trip")
+		}
+
+		vehicle.TripID = &tripID
+		vehicle.Status = normalizeVehicleStatus("assigned")
+
+		return tx.Save(&vehicle).Error
+	})
 }
 
 func (u *VehicleUsecase) GetVehicleByTripID(ctx context.Context, tripID uint) (*entity.Vehicle, error) {

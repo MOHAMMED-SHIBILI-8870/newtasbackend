@@ -68,14 +68,19 @@ func (u *NotificationUsecase) CreateBookingNotification(
 
 func (u *NotificationUsecase) CreateAdminBookingNotification(
 	ctx context.Context,
+	userID uint,
+	bookingID uint,
 	message string,
 ) error {
 
 	return u.CreateNotification(ctx, &entity.Notification{
-		Type:    "admin_booking",
-		Title:   "New Booking",
-		Message: message,
-		IsRead:  false,
+		UserID:    userID,
+		Type:      "admin_booking",
+		Title:     "New Booking",
+		Message:   message,
+		BookingID: &bookingID,
+		IsRead:    false,
+		IsAdmin:   true,
 	})
 }
 

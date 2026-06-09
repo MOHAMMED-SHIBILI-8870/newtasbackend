@@ -28,11 +28,22 @@ func bookingErrorStatus(err error) int {
 	switch {
 	case strings.Contains(msg, "not found"):
 		return fiber.StatusNotFound
+	case strings.Contains(msg, "already booked"), strings.Contains(msg, "duplicate"), strings.Contains(msg, "full"), strings.Contains(msg, "insufficient"), strings.Contains(msg, "overlap"), strings.Contains(msg, "not available"):
+		return fiber.StatusConflict
 	case strings.Contains(msg, "access denied"):
 		return fiber.StatusForbidden
 	default:
-		return fiber.StatusBadRequest
+		if strings.Contains(msg, "required") || strings.Contains(msg, "invalid") {
+			return fiber.StatusBadRequest
+		}
+		return fiber.StatusUnprocessableEntity
 	}
+}
+
+type bookingInput struct {
+	Seats       int    `json:"seats"`
+	CouponCode  string `json:"coupon_code"`
+	BookingType string `json:"booking_type"`
 }
 
 func (h *BookingHandler) BookTrip(c *fiber.Ctx) error {
@@ -41,10 +52,7 @@ func (h *BookingHandler) BookTrip(c *fiber.Ctx) error {
 		return response.Fail(c, fiber.StatusBadRequest, "invalid trip id", err)
 	}
 
-	var input struct {
-		Seats      int    `json:"seats"`
-		CouponCode string `json:"coupon_code"`
-	}
+	var input bookingInput
 	if len(c.Body()) > 0 {
 		if err := c.BodyParser(&input); err != nil {
 			return response.Fail(c, fiber.StatusBadRequest, "invalid request body", err)
@@ -62,6 +70,62 @@ func (h *BookingHandler) BookTrip(c *fiber.Ctx) error {
 	}
 
 	return response.Success(c, fiber.StatusCreated, "booking created successfully", booking)
+}
+
+func (h *BookingHandler) BookSlot(c *fiber.Ctx) error {
+	slotID, err := strconv.Atoi(c.Params("slot_id"))
+	if err != nil {
+		return response.Fail(c, fiber.StatusBadRequest, "invalid slot id", err)
+	}
+
+	var input bookingInput
+	if len(c.Body()) > 0 {
+		if err := c.BodyParser(&input); err != nil {
+			return response.Fail(c, fiber.StatusBadRequest, "invalid request body", err)
+		}
+	}
+
+	userID := middleware.GetAuthUserID(c)
+	if userID == 0 {
+		return response.Fail(c, fiber.StatusUnauthorized, "unauthorized", nil)
+	}
+
+	booking, err := h.usecase.BookSlot(c.Context(), uint(slotID), userID, input.Seats, input.CouponCode, input.BookingType)
+	if err != nil {
+		return response.Fail(c, bookingErrorStatus(err), "failed to create booking", err)
+	}
+
+	return response.Success(c, fiber.StatusCreated, "booking created successfully", booking)
+}
+
+func (h *BookingHandler) GetBookingByID(c *fiber.Ctx) error {
+	bookingID, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return response.Fail(
+			c, 
+			fiber.StatusBadRequest, 
+			"invalid booking id format", 
+			err,
+		)
+	}
+
+	// Calls the clean usecase layer wrapper
+	booking, err := h.usecase.GetBookingByID(c.Context(), uint(bookingID))
+	if err != nil {
+		return response.Fail(
+			c, 
+			bookingErrorStatus(err), 
+			"failed to fetch booking info", 
+			err,
+		)
+	}
+
+	return response.Success(
+		c, 
+		fiber.StatusOK, 
+		"booking details retrieved successfully", 
+		booking,
+	)
 }
 
 func (h *BookingHandler) GetUserBookings(c *fiber.Ctx) error {

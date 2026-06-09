@@ -17,12 +17,18 @@ import (
 )
 
 type AIHandler struct {
-	client  *genai.Client
-	usecase *usecase.AITripRequestUsecase
+	client     *genai.Client
+	usecase    *usecase.AITripRequestUsecase
+	ragUsecase *usecase.RAGUsecase
 }
 
-func NewAIHandler(client *genai.Client, aiUsecase *usecase.AITripRequestUsecase) *AIHandler {
-	return &AIHandler{client: client, usecase: aiUsecase}
+func NewAIHandler(client *genai.Client, aiUsecase *usecase.AITripRequestUsecase, ragUsecase *usecase.RAGUsecase) *AIHandler {
+
+	return &AIHandler{
+		client:     client,
+		usecase:    aiUsecase,
+		ragUsecase: ragUsecase,
+	}
 }
 
 type TripRequest struct {
@@ -58,44 +64,64 @@ func (h *AIHandler) GenerateTripPlan(c *fiber.Ctx) error {
 		req.CreatedBy = "user"
 	}
 
+	ragContext := ""
+
+	if h.ragUsecase != nil {
+
+		contextData, err := h.ragUsecase.BuildContext(
+			c.Context(),
+			req.To,
+		)
+
+		if err == nil {
+			ragContext = contextData
+		}
+	}
+
 	prompt := fmt.Sprintf(`
-Create a concise %s trip plan.
+You are a professional travel planner.
 
-Trip Details:
-- From: %s
-- To: %s
-- Duration: %d days
-- Travelers: %d people
-- Children: %d
-- Budget Level: %s
-- Hotel Preference: %s
-- Transport Preference: %s
-- Created By: %s
+Reference Trips From Database:
 
-Include:
-1. Day-wise itinerary
-2. Tourist attractions
-3. Food recommendations
-4. Transport suggestions
-5. Hotel suggestions
-6. Estimated total budget
-7. Useful travel tips
+%s
 
-Keep the response clean, short, and easy to read.
+User Request:
+
+From: %s
+To: %s
+Duration: %d days
+Trip Type: %s
+Budget Level: %s
+Members: %d
+Children: %d
+Hotel Type: %s
+Transport: %s
+
+Instructions:
+
+1. Use the reference trips as guidance.
+2. Do not copy exactly.
+3. Create a fresh itinerary.
+4. Include day-wise plans.
+5. Include attractions.
+6. Include hotel suggestions.
+7. Include food suggestions.
+8. Include estimated budget.
+
 `,
-		req.TripType,
+		ragContext,
 		req.From,
 		req.To,
 		req.Days,
+		req.TripType,
+		req.BudgetLevel,
 		req.Members,
 		req.Children,
-		req.BudgetLevel,
 		req.HotelType,
 		req.Transport,
-		req.CreatedBy,
 	)
 
-	result, err := h.generatePlan(prompt, req)
+	result, err := h.generatePlan(c.Context(), prompt, req)
 	if err != nil {
 		status := fiber.StatusInternalServerError
 		if strings.Contains(strings.ToLower(err.Error()), "rate limit exceeded") {
@@ -218,12 +244,16 @@ func (h *AIHandler) reviewTripRequest(c *fiber.Ctx, approve bool) error {
 	return response.Success(c, fiber.StatusOK, message, toAITripRequestResponse(request))
 }
 
-func (h *AIHandler) generatePlan(prompt string, req TripRequest) (string, error) {
+func (h *AIHandler) generatePlan(ctx context.Context, prompt string, req TripRequest) (string, error) {
 	if h.client == nil {
 		return generateFallbackTripPlan(req), nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	resp, err := h.client.Models.GenerateContent(ctx, "gemini-2.5-flash", genai.Text(prompt), nil)

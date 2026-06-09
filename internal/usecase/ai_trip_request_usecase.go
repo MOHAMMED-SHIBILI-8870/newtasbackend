@@ -9,6 +9,9 @@ import (
 	"log"
 	"strings"
 	"time"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type AITripRequestUsecase struct {
@@ -16,6 +19,7 @@ type AITripRequestUsecase struct {
 	tripRepo            repository.TripRepository
 	userRepo            repository.UserRepository
 	notificationUsecase *NotificationUsecase
+	db                  *gorm.DB
 }
 
 func NewAITripRequestUsecase(
@@ -23,12 +27,14 @@ func NewAITripRequestUsecase(
 	tripRepo repository.TripRepository,
 	userRepo repository.UserRepository,
 	notificationUsecase *NotificationUsecase,
+	db *gorm.DB,
 ) *AITripRequestUsecase {
 	return &AITripRequestUsecase{
 		repo:                repo,
 		tripRepo:            tripRepo,
 		userRepo:            userRepo,
 		notificationUsecase: notificationUsecase,
+		db:                  db,
 	}
 }
 
@@ -119,69 +125,99 @@ func (u *AITripRequestUsecase) ReviewRequest(ctx context.Context, adminID, reque
 	if requestID == 0 {
 		return nil, errors.New("request id is required")
 	}
+	if u.db == nil {
+		return nil, errors.New("database unavailable")
+	}
 
-	request, err := u.repo.GetByID(ctx, requestID)
+	var reviewedID uint
+	if err := u.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var request entity.AITripRequest
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Preload("User").
+			Preload("Trip").
+			Preload("ReviewedBy").
+			First(&request, requestID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("ai trip request not found")
+			}
+			return err
+		}
+		if request.Status != entity.AITripStatusPending {
+			return errors.New("request has already been reviewed")
+		}
+
+		now := time.Now().UTC()
+		request.ReviewedByID = &adminID
+		request.ReviewedAt = &now
+		request.AdminNote = adminNote
+
+		if approve {
+			trip := &entity.Trip{
+				From:         request.From,
+				To:           request.To,
+				StartDate:    now,
+				EndDate:      now.AddDate(0, 0, maxInt(request.Days, 1)),
+				Duration:     maxInt(request.Days, 1),
+				TripType:     request.TripType,
+				BudgetLevel:  request.BudgetLevel,
+				Price:        0,
+				Members:      request.Members,
+				Children:     request.Children,
+				HotelType:    request.HotelType,
+				Transport:    request.Transport,
+				ItineraryRaw: request.GeneratedPlan,
+				Status:       "active",
+			}
+
+			if err := tx.Create(trip).Error; err != nil {
+				return err
+			}
+
+			request.TripID = &trip.ID
+			request.Status = entity.AITripStatusApproved
+		} else {
+			request.Status = entity.AITripStatusRejected
+		}
+
+		if err := tx.Save(&request).Error; err != nil {
+			return err
+		}
+
+		if u.notificationUsecase != nil {
+			title := "AI trip request updated"
+			message := "Your AI trip request has been reviewed."
+			if approve {
+				title = "AI trip approved"
+				message = fmt.Sprintf("Your AI trip request from %s to %s has been approved.", request.From, request.To)
+			} else {
+				title = "AI trip rejected"
+				message = fmt.Sprintf("Your AI trip request from %s to %s has been rejected.", request.From, request.To)
+			}
+
+			if err := tx.Create(&entity.Notification{
+				UserID:          request.UserID,
+				Type:            "ai_request",
+				Title:           title,
+				Message:         message,
+				AITripRequestID: &request.ID,
+				IsRead:          false,
+			}).Error; err != nil {
+				return err
+			}
+		}
+
+		reviewedID = request.ID
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	request, err := u.repo.GetByID(ctx, reviewedID)
 	if err != nil {
 		return nil, err
 	}
 	if request == nil {
 		return nil, errors.New("ai trip request not found")
-	}
-	if request.Status != entity.AITripStatusPending {
-		return nil, errors.New("request has already been reviewed")
-	}
-
-	now := time.Now().UTC()
-	request.ReviewedByID = &adminID
-	request.ReviewedAt = &now
-	request.AdminNote = adminNote
-
-	if approve {
-		trip := &entity.Trip{
-			From:         request.From,
-			To:           request.To,
-			StartDate:    now,
-			EndDate:      now.AddDate(0, 0, maxInt(request.Days, 1)),
-			Duration:     maxInt(request.Days, 1),
-			TripType:     request.TripType,
-			BudgetLevel:  request.BudgetLevel,
-			Price:        0,
-			Members:      request.Members,
-			Children:     request.Children,
-			HotelType:    request.HotelType,
-			Transport:    request.Transport,
-			ItineraryRaw: request.GeneratedPlan,
-			Status:       "active",
-		}
-
-		if err := u.tripRepo.Create(ctx, trip); err != nil {
-			return nil, err
-		}
-
-		request.TripID = &trip.ID
-		request.Status = entity.AITripStatusApproved
-	} else {
-		request.Status = entity.AITripStatusRejected
-	}
-
-	if err := u.repo.Update(ctx, request); err != nil {
-		return nil, err
-	}
-
-	if u.notificationUsecase != nil {
-		title := "AI trip request updated"
-		message := "Your AI trip request has been reviewed."
-		if approve {
-			title = "AI trip approved"
-			message = fmt.Sprintf("Your AI trip request from %s to %s has been approved.", request.From, request.To)
-		} else {
-			title = "AI trip rejected"
-			message = fmt.Sprintf("Your AI trip request from %s to %s has been rejected.", request.From, request.To)
-		}
-
-		if err := u.notificationUsecase.CreateAIReviewNotification(ctx, request.UserID, request.ID, title, message); err != nil {
-			log.Printf("failed to notify user %d for ai request %d: %v", request.UserID, request.ID, err)
-		}
 	}
 
 	return request, nil

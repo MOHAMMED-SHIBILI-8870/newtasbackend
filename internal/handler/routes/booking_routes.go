@@ -15,8 +15,10 @@ func BookingRoutes(app fiber.Router, h *handler.BookingHandler, auth fiber.Handl
 	// Requires standard account login validation
 	userBookings := app.Group("/bookings", auth)
 
-	userBookings.Post("/trip/:id", h.BookTrip)                       // Create a fresh booking from an admin template ID
-	userBookings.Get("/my-orders", h.GetUserBookings)                // Retrieve list of packages purchased by the active user
+	userBookings.Get("/my-orders", h.GetUserBookings) 
+	userBookings.Get("/:id", h.GetBookingByID)
+	userBookings.Post("/slot/:slot_id", h.BookSlot)                  // Create a booking against a specific trip slot
+	userBookings.Post("/trip/:id", h.BookTrip)               // Retrieve list of packages purchased by the active user
 	userBookings.Patch("/custom-plan/:id", h.UpdateUserBookingPlans) // Allow user to modify their specific itinerary copy
 
 	// =====================================

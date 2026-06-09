@@ -5,6 +5,7 @@ import (
 	"backend/internal/repository"
 	"context"
 	"errors"
+	"time"
 )
 
 type TripUsecase struct {
@@ -19,19 +20,25 @@ func (u *TripUsecase) CreateTrip(ctx context.Context, trip *entity.Trip) error {
 	if trip.From == "" || trip.To == "" {
 		return errors.New("origin and destination locations are required")
 	}
-	if trip.StartDate.IsZero() || trip.EndDate.IsZero() {
-		return errors.New("valid starting and ending dates are required")
-	}
+
 	if trip.Duration <= 0 {
 		return errors.New("trip duration must span at least 1 day")
 	}
-	if trip.Price < 0 {
-		return errors.New("price cannot be a negative value")
+
+	if trip.Price <= 0 {
+		return errors.New("price is required and must be greater than 0")
+	}
+
+	if trip.StartDate.IsZero() {
+		trip.StartDate = time.Now()
+	}
+
+	if trip.EndDate.IsZero() {
+		trip.EndDate = trip.StartDate.AddDate(0, 0, trip.Duration-1)
 	}
 
 	return u.repo.Create(ctx, trip)
 }
-
 func (u *TripUsecase) GetTripByName(ctx context.Context, name string) (*entity.Trip, error) {
 	if name == "" {
 		return nil, errors.New("search trip string query cannot be empty")

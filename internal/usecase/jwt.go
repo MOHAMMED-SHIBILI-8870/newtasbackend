@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"backend/internal/entity"
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -50,7 +52,7 @@ func NormalizeRole(role string) string {
 }
 
 func IsValidRole(role string) bool {
-	switch NormalizeRole(role) {
+	switch strings.ToLower(strings.TrimSpace(role)) {
 	case normalizedAdminRole, normalizedAgencyRole, normalizedGuideRole, normalizedDriverRole, normalizedSupportRole, normalizedUserRole:
 		return true
 	default:
@@ -58,11 +60,23 @@ func IsValidRole(role string) bool {
 	}
 }
 
+func getJWTSecret() (string, error) {
+	if secretKey := os.Getenv("JWT_SECRET"); secretKey != "" {
+		return secretKey, nil
+	}
+
+	if secretKey := os.Getenv("JWT_SECRETKEY"); secretKey != "" {
+		return secretKey, nil
+	}
+
+	return "", errors.New("JWT secret not configured")
+}
+
 // Generate Access Token
 func GenerateAccessToken(userID uint, role string) (string, error) {
-	secretKey := os.Getenv("JWT_SECRETKEY")
-	if secretKey == "" {
-		return "", errors.New("JWT secret key not set")
+	secretKey, err := getJWTSecret()
+	if err != nil {
+		return "", err
 	}
 
 	now := time.Now().UTC()
@@ -95,30 +109,45 @@ func GenerateRefreshToken() (string, string, error) {
 }
 
 // 💾 Save Refresh Token
-func SaveRefreshToken(db *gorm.DB, userID uint, hashedToken string, expiresAt time.Time) error {
-
-	// delete old tokens (optional but good practice)
-	if err := db.Where("user_id = ?", userID).Delete(&entity.RefreshToken{}).Error; err != nil {
-		return err
+func SaveRefreshToken(db *gorm.DB, ctx context.Context, userID uint, hashedToken string, expiresAt time.Time) error {
+	if db == nil {
+		return errors.New("database unavailable")
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
-	refreshToken := entity.RefreshToken{
-		UserID:    userID,
-		Token:     hashedToken,
-		ExpiredAt: expiresAt,
-	}
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Keep refresh tokens single-session per user so a new login invalidates older sessions.
+		if err := tx.Where("user_id = ?", userID).Delete(&entity.RefreshToken{}).Error; err != nil {
+			return err
+		}
 
-	return db.Create(&refreshToken).Error
+		refreshToken := entity.RefreshToken{
+			UserID:    userID,
+			Token:     hashedToken,
+			ExpiredAt: expiresAt,
+		}
+
+		return tx.Create(&refreshToken).Error
+	})
 }
 
 // ✅ Validate Refresh Token
-func ValidateRefreshToken(db *gorm.DB, token string) (*entity.RefreshToken, error) {
+func ValidateRefreshToken(db *gorm.DB, ctx context.Context, token string) (*entity.RefreshToken, error) {
+	if db == nil {
+		return nil, errors.New("database unavailable")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	hash := sha256.Sum256([]byte(token))
 	hashedToken := hex.EncodeToString(hash[:])
 
 	var retoken entity.RefreshToken
 
-	err := db.Where("token = ? AND expired_at > ?", hashedToken, time.Now()).
+	err := db.WithContext(ctx).Where("token = ? AND expired_at > ?", hashedToken, time.Now()).
 		First(&retoken).Error
 
 	if err != nil {
@@ -128,19 +157,99 @@ func ValidateRefreshToken(db *gorm.DB, token string) (*entity.RefreshToken, erro
 	return &retoken, nil
 }
 
+// RevokeRefreshTokensByUserID removes every refresh token tied to one account.
+func RevokeRefreshTokensByUserID(db *gorm.DB, ctx context.Context, userID uint) error {
+	if db == nil {
+		return errors.New("database unavailable")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	return db.WithContext(ctx).Where("user_id = ?", userID).Delete(&entity.RefreshToken{}).Error
+}
+
+// RotateRefreshToken consumes the old refresh token and issues a replacement atomically.
+func RotateRefreshToken(db *gorm.DB, ctx context.Context, refreshToken string) (*entity.User, string, time.Time, error) {
+	if db == nil {
+		return nil, "", time.Time{}, errors.New("database unavailable")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	var user entity.User
+	var newPlainToken string
+	var expiresAt time.Time
+
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		hash := sha256.Sum256([]byte(refreshToken))
+		hashedToken := hex.EncodeToString(hash[:])
+
+		var current entity.RefreshToken
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("token = ? AND expired_at > ?", hashedToken, time.Now()).
+			First(&current).Error; err != nil {
+			return errors.New("expired or invalid refresh token")
+		}
+
+		if err := tx.First(&user, current.UserID).Error; err != nil {
+			return err
+		}
+		if user.IsBlocked {
+			return errors.New("account is blocked")
+		}
+		if !user.IsVerified {
+			return errors.New("account is not verified")
+		}
+
+		if err := tx.Where("user_id = ?", user.ID).Delete(&entity.RefreshToken{}).Error; err != nil {
+			return err
+		}
+
+		plainToken, hashedNewToken, err := GenerateRefreshToken()
+		if err != nil {
+			return err
+		}
+
+		expiresAt = time.Now().Add(7 * 24 * time.Hour)
+		if err := tx.Create(&entity.RefreshToken{
+			UserID:    user.ID,
+			Token:     hashedNewToken,
+			ExpiredAt: expiresAt,
+		}).Error; err != nil {
+			return err
+		}
+
+		newPlainToken = plainToken
+		return nil
+	})
+	if err != nil {
+		return nil, "", time.Time{}, err
+	}
+
+	return &user, newPlainToken, expiresAt, nil
+}
+
 // create a new access and refresh token
 
-func RefreshAccessToken(db *gorm.DB, refreshToken string) (string, error) {
+func RefreshAccessToken(db *gorm.DB, ctx context.Context, refreshToken string) (string, error) {
+	if db == nil {
+		return "", errors.New("database unavailable")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	// validate refresh token
-	rt, err := ValidateRefreshToken(db, refreshToken)
+	rt, err := ValidateRefreshToken(db, ctx, refreshToken)
 	if err != nil {
 		return "", err
 	}
 
 	// get user (you may need repo here)
 	var user entity.User
-	if err := db.First(&user, rt.UserID).Error; err != nil {
+	if err := db.WithContext(ctx).First(&user, rt.UserID).Error; err != nil {
 		return "", err
 	}
 
@@ -154,10 +263,17 @@ func RefreshAccessToken(db *gorm.DB, refreshToken string) (string, error) {
 }
 
 // ❌ Delete Refresh Token
-func DeleteReToken(db *gorm.DB, token string) error {
+func DeleteReToken(db *gorm.DB, ctx context.Context, token string) error {
+	if db == nil {
+		return errors.New("database unavailable")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	hash := sha256.Sum256([]byte(token))
 	hashedToken := hex.EncodeToString(hash[:])
 
-	return db.Where("token = ?", hashedToken).
+	return db.WithContext(ctx).Where("token = ?", hashedToken).
 		Delete(&entity.RefreshToken{}).Error
 }

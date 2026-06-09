@@ -37,6 +37,7 @@ func tripStatusFromErr(err error) int {
 
 func (h *TripHandler) CreateTrip(c *fiber.Ctx) error {
 	var trip entity.Trip
+
 	if err := c.BodyParser(&trip); err != nil {
 		return response.Fail(c, fiber.StatusBadRequest, "invalid request body", err)
 	}

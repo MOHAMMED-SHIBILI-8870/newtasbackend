@@ -12,8 +12,8 @@ type TripPlan struct {
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
-	TripID      uint   `gorm:"not null;index" json:"trip_id"`
-	DayNumber   int    `gorm:"not null" json:"day_number"`
+	TripID      uint   `gorm:"not null;index;uniqueIndex:idx_trip_day" json:"trip_id"`
+	DayNumber   int    `gorm:"not null;uniqueIndex:idx_trip_day" json:"day_number"`
 	Title       string `gorm:"type:varchar(255);not null" json:"title"`
 	Description string `gorm:"type:text" json:"description"`
 	Location    string `gorm:"type:varchar(255)" json:"location"`

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"math"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ type BookingUsecase struct {
 	tripRepo            repository.TripRepository
 	userRepo            repository.UserRepository
 	offerRepo           repository.OfferRepository
+	slotRepo            repository.TripSlotRepository
 	db                  *gorm.DB
 	notificationUsecase *NotificationUsecase
 }
@@ -29,13 +31,19 @@ func NewBookingUsecase(
 	offerRepo repository.OfferRepository,
 	db *gorm.DB,
 	notificationUsecase *NotificationUsecase,
+	slotRepos ...repository.TripSlotRepository,
 ) *BookingUsecase {
+	var slotRepo repository.TripSlotRepository
+	if len(slotRepos) > 0 {
+		slotRepo = slotRepos[0]
+	}
 
 	return &BookingUsecase{
 		bookingRepo:         br,
 		tripRepo:            tr,
 		userRepo:            ur,
 		offerRepo:           offerRepo,
+		slotRepo:            slotRepo,
 		db:                  db,
 		notificationUsecase: notificationUsecase,
 	}
@@ -48,6 +56,9 @@ func (u *BookingUsecase) BookTrip(
 	seats int,
 	couponCode string,
 ) (*entity.Booking, error) {
+	if u == nil || u.db == nil || u.bookingRepo == nil || u.tripRepo == nil || u.userRepo == nil {
+		return nil, errors.New("booking service unavailable")
+	}
 
 	if seats <= 0 {
 		seats = 1
@@ -64,6 +75,23 @@ func (u *BookingUsecase) BookTrip(
 
 	if trip.Status != "" && trip.Status != "active" {
 		return nil, errors.New("trip is not available for booking")
+	}
+
+	// CHECK FOR OVERLAPPING BOOKINGS
+	overlap, err := u.bookingRepo.HasTripOverlap(
+		ctx,
+		userID,
+		trip.StartDate,
+		trip.EndDate,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if overlap {
+		return nil, errors.New(
+			"you already have another trip booked during this period",
+		)
 	}
 
 	var offer *entity.Offer
@@ -91,8 +119,6 @@ func (u *BookingUsecase) BookTrip(
 			Where("trip_id = ?", tripID).
 			First(&vehicle).Error; err == nil {
 			vehicleFound = true
-		} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
 		}
 
 		var vehicleID *uint
@@ -114,32 +140,55 @@ func (u *BookingUsecase) BookTrip(
 			vehicleID = &vehicle.ID
 		}
 
-		baseAmount := trip.Price * float64(seats)
+		// All monetary math is rounded through minor units so float inputs do not
+		// accumulate fractional-cent drift across booking and reporting flows.
+		baseAmountMinor := moneyToMinorUnits(trip.Price) * int64(seats)
+		baseAmount := moneyFromMinorUnits(baseAmountMinor)
 		discountPercent := 0.0
 		offerID := (*uint)(nil)
 		coupon := ""
-		finalAmount := baseAmount
+		finalAmountMinor := baseAmountMinor
 		if offer != nil {
-			discountPercent = offer.DiscountPercent
+			discountPercent = roundMoney(offer.DiscountPercent)
 			offerID = &offer.ID
 			coupon = offer.Code
-			finalAmount = baseAmount - (baseAmount * discountPercent / 100)
-			if finalAmount < 0 {
-				finalAmount = 0
+			discountMinor := int64(math.Round(float64(baseAmountMinor) * discountPercent / 100))
+			finalAmountMinor -= discountMinor
+			if finalAmountMinor < 0 {
+				finalAmountMinor = 0
 			}
 		}
+		finalAmount := moneyFromMinorUnits(finalAmountMinor)
+
+		advancePercent := 20.0
+
+		advanceAmount := roundMoney(
+			finalAmount * advancePercent / 100,
+		)
+
+		balanceAmount := roundMoney(
+			finalAmount - advanceAmount,
+		)
 
 		booking := &entity.Booking{
-			UserID:          userID,
-			TripID:          tripID,
-			VehicleID:       vehicleID,
-			OfferID:         offerID,
-			Status:          "confirmed",
+			UserID:    userID,
+			TripID:    tripID,
+			VehicleID: vehicleID,
+			OfferID:   offerID,
+
+			Status: "pending_payment",
+
 			SeatsBooked:     seats,
 			CouponCode:      coupon,
 			DiscountPercent: discountPercent,
-			BaseAmount:      baseAmount,
-			FinalAmount:     finalAmount,
+
+			BaseAmount:  baseAmount,
+			FinalAmount: finalAmount,
+
+			AdvancePercent: advancePercent,
+			AdvanceAmount:  advanceAmount,
+			BalanceAmount:  balanceAmount,
+			PaymentStatus:  "pending",
 		}
 
 		for _, p := range trip.Plans {
@@ -195,33 +244,250 @@ func (u *BookingUsecase) BookTrip(
 	// ADMIN NOTIFICATION
 	// =====================================
 
-	user, err := u.userRepo.GetByID(
-		ctx,
-		userID,
-	)
+	if u.notificationUsecase != nil && u.userRepo != nil {
+		user, err := u.userRepo.GetByID(ctx, userID)
+		if err == nil && user != nil {
+			admins, err := u.userRepo.GetUsers(ctx, "admin", "")
+			if err == nil {
+				for _, admin := range admins {
+					if err := u.notificationUsecase.CreateAdminBookingNotification(ctx, admin.ID, createdBooking.ID, "New booking from "+user.Email); err != nil {
+						log.Printf("admin notification failed: %v", err)
+					}
+				}
+			}
+		}
+	}
 
-	if err == nil {
+	return createdBooking, nil
+}
 
-		adminNotification := &entity.Notification{
-			Type:      "booking",
-			Title:     "New Booking",
-			Message:   "New booking from " + user.Email,
-			BookingID: &createdBooking.ID,
-			IsRead:    false,
-			IsAdmin:   true,
+func (u *BookingUsecase) BookSlot(
+	ctx context.Context,
+	slotID uint,
+	userID uint,
+	seats int,
+	couponCode string,
+	bookingType string,
+) (*entity.Booking, error) {
+	if u == nil || u.db == nil || u.bookingRepo == nil || u.tripRepo == nil || u.userRepo == nil || u.slotRepo == nil {
+		return nil, errors.New("booking service unavailable")
+	}
+
+	if slotID == 0 {
+		return nil, errors.New("slot id is required")
+	}
+
+	if seats <= 0 {
+		seats = 1
+	}
+
+	bookingType, err := normalizeBookingType(bookingType)
+	if err != nil {
+		return nil, err
+	}
+
+	var offer *entity.Offer
+	if strings.TrimSpace(couponCode) != "" && u.offerRepo != nil {
+		offer, err = u.offerRepo.GetByCode(ctx, couponCode)
+		if err != nil {
+			return nil, err
+		}
+		if offer == nil {
+			return nil, errors.New("offer not found")
+		}
+		if !offer.Active {
+			return nil, errors.New("offer is inactive")
+		}
+		if offer.ExpiryDate.Before(time.Now()) {
+			return nil, errors.New("offer has expired")
+		}
+	}
+
+	var createdBooking *entity.Booking
+	err = u.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var slot entity.TripSlot
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Preload("Trip").
+			Preload("Trip.Plans").
+			Preload("Vehicle").
+			First(&slot, slotID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("slot not found")
+			}
+			return err
 		}
 
-		err = u.notificationUsecase.CreateNotification(
+		switch slot.Status {
+		case "scheduled", "active":
+		default:
+			return errors.New("slot is not available for booking")
+		}
+
+		// Prevent overlapping trip bookings
+		overlap, err := u.bookingRepo.HasOverlappingBooking(
 			ctx,
-			adminNotification,
+			userID,
+			slot.StartDate,
+			slot.EndDate,
 		)
 
 		if err != nil {
+			return err
+		}
 
-			log.Printf(
-				"admin notification failed: %v",
-				err,
+		if overlap {
+			return errors.New(
+				"you already have another trip booked during this period",
 			)
+		}
+
+		if bookingType == "private" {
+			if slot.BookedSeats > 0 {
+				return errors.New("private booking requires an empty slot")
+			}
+			seats = slot.TotalSeats
+		}
+
+		if slot.AvailableSeats < seats {
+			return errors.New("insufficient available seats")
+		}
+
+		var existingBooking entity.Booking
+		if err := tx.Where("user_id = ? AND slot_id = ?", userID, slot.ID).First(&existingBooking).Error; err == nil {
+			return errors.New("already booked this trip slot")
+		}
+
+		// All monetary math is rounded through minor units so float inputs do not
+		// accumulate fractional-cent drift across booking and reporting flows.
+		price := slot.PriceOverride
+		if price <= 0 {
+			price = slot.Trip.Price
+		}
+		baseAmountMinor := moneyToMinorUnits(price) * int64(seats)
+		baseAmount := moneyFromMinorUnits(baseAmountMinor)
+		discountPercent := 0.0
+		offerID := (*uint)(nil)
+		coupon := ""
+		finalAmountMinor := baseAmountMinor
+		if offer != nil {
+			discountPercent = roundMoney(offer.DiscountPercent)
+			offerID = &offer.ID
+			coupon = offer.Code
+			discountMinor := int64(math.Round(float64(baseAmountMinor) * discountPercent / 100))
+			finalAmountMinor -= discountMinor
+			if finalAmountMinor < 0 {
+				finalAmountMinor = 0
+			}
+		}
+		finalAmount := moneyFromMinorUnits(finalAmountMinor)
+
+		updatedAvailable := slot.AvailableSeats - seats
+		updatedBooked := slot.BookedSeats + seats
+		if bookingType == "private" {
+			updatedAvailable = 0
+			updatedBooked = slot.TotalSeats
+		}
+
+		slotUpdate := map[string]any{
+			"available_seats": updatedAvailable,
+			"booked_seats":    updatedBooked,
+		}
+		if updatedAvailable == 0 {
+			slotUpdate["status"] = "fully_booked"
+		}
+
+		if result := tx.Model(&entity.TripSlot{}).
+			Where("id = ? AND available_seats >= ?", slot.ID, seats).
+			Updates(slotUpdate); result.Error != nil {
+			return result.Error
+		} else if result.RowsAffected == 0 {
+			return errors.New("insufficient available seats")
+		}
+
+		advancePercent := 20.0
+
+		advanceAmount := roundMoney(
+			finalAmount * advancePercent / 100,
+		)
+
+		balanceAmount := roundMoney(
+			finalAmount - advanceAmount,
+		)
+
+		booking := &entity.Booking{
+			UserID:    userID,
+			TripID:    slot.TripID,
+			SlotID:    &slot.ID,
+			VehicleID: slot.VehicleID,
+			OfferID:   offerID,
+
+			BookingType: bookingType,
+			Status:      "pending_payment",
+
+			SeatsBooked:     seats,
+			CouponCode:      coupon,
+			DiscountPercent: discountPercent,
+
+			BaseAmount:  baseAmount,
+			FinalAmount: finalAmount,
+
+			AdvancePercent: advancePercent,
+			AdvanceAmount:  advanceAmount,
+			BalanceAmount:  balanceAmount,
+			PaymentStatus:  "pending",
+		}
+
+		for _, p := range slot.Trip.Plans {
+			booking.CustomPlans = append(
+				booking.CustomPlans,
+				entity.BookingPlan{
+					DayNumber:   p.DayNumber,
+					Title:       p.Title,
+					Description: p.Description,
+					Location:    p.Location,
+					StartTime:   p.StartTime,
+					EndTime:     p.EndTime,
+					Category:    p.Category,
+					Cost:        p.Cost,
+				},
+			)
+		}
+
+		if err := u.bookingRepo.CreateBookingTx(tx, booking); err != nil {
+			return err
+		}
+
+		booking.Trip = slot.Trip
+		booking.Slot = &slot
+		createdBooking = booking
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if u.notificationUsecase != nil {
+		if err := u.notificationUsecase.CreateBookingNotification(
+			ctx,
+			userID,
+			createdBooking.ID,
+			"Your slot booking has been created",
+		); err != nil {
+			log.Printf("user notification failed: %v", err)
+		}
+	}
+
+	if u.notificationUsecase != nil && u.userRepo != nil {
+		user, err := u.userRepo.GetByID(ctx, userID)
+		if err == nil && user != nil {
+			admins, err := u.userRepo.GetUsers(ctx, "admin", "")
+			if err == nil {
+				for _, admin := range admins {
+					if err := u.notificationUsecase.CreateAdminBookingNotification(ctx, admin.ID, createdBooking.ID, "New slot booking from "+user.Email); err != nil {
+						log.Printf("admin notification failed: %v", err)
+					}
+				}
+			}
 		}
 	}
 
@@ -232,11 +498,39 @@ func (u *BookingUsecase) GetUserBookings(
 	ctx context.Context,
 	userID uint,
 ) ([]entity.Booking, error) {
+	if u == nil || u.bookingRepo == nil {
+		return nil, errors.New("booking service unavailable")
+	}
 
 	return u.bookingRepo.GetBookingsByUserID(
 		ctx,
 		userID,
 	)
+}
+// Add this method to your existing BookingUsecase struct in internal/usecase/booking.go
+
+func (u *BookingUsecase) GetBookingByID(
+	ctx context.Context, 
+	bookingID uint,
+) (*entity.Booking, error) {
+	if u == nil || u.bookingRepo == nil {
+		return nil, errors.New("booking service unavailable")
+	}
+
+	if bookingID == 0 {
+		return nil, errors.New("invalid booking id lookup")
+	}
+
+	booking, err := u.bookingRepo.GetBookingByID(ctx, bookingID)
+	if err != nil {
+		// GORM returns gorm.ErrRecordNotFound if the ID doesn't exist in PostgreSQL
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("booking record not found")
+		}
+		return nil, err
+	}
+
+	return booking, nil
 }
 
 func (u *BookingUsecase) UpdateUserBookingPlans(
@@ -245,6 +539,9 @@ func (u *BookingUsecase) UpdateUserBookingPlans(
 	userID uint,
 	plans []entity.BookingPlan,
 ) error {
+	if u == nil || u.bookingRepo == nil {
+		return errors.New("booking service unavailable")
+	}
 
 	booking, err := u.bookingRepo.GetBookingByID(
 		ctx,
@@ -269,6 +566,21 @@ func (u *BookingUsecase) UpdateUserBookingPlans(
 func (u *BookingUsecase) GetAllOrders(
 	ctx context.Context,
 ) ([]entity.Booking, error) {
+	if u == nil || u.bookingRepo == nil {
+		return nil, errors.New("booking service unavailable")
+	}
 
 	return u.bookingRepo.GetAllOrders(ctx)
+}
+
+func moneyToMinorUnits(amount float64) int64 {
+	return int64(math.Round(amount * 100))
+}
+
+func moneyFromMinorUnits(minor int64) float64 {
+	return float64(minor) / 100
+}
+
+func roundMoney(amount float64) float64 {
+	return math.Round(amount*100) / 100
 }

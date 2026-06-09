@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
+	"os"
+	"strings"
 
 	"backend/internal/config"
 	"backend/internal/handler"
@@ -11,6 +14,7 @@ import (
 	"backend/internal/repository"
 	"backend/internal/response"
 	"backend/internal/seed"
+	"backend/internal/service"
 	"backend/internal/usecase"
 	"backend/migrations"
 
@@ -26,7 +30,7 @@ func main() {
 		log.Printf("env load warning: %v", err)
 	}
 
-	if err := config.ValidateRequiredEnv("DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME", "DB_PORT", "JWT_SECRETKEY"); err != nil {
+	if err := validateStartupEnv(); err != nil {
 		log.Fatal(err)
 	}
 
@@ -72,6 +76,7 @@ func main() {
 
 	tripRepo := repository.NewTripRepository(db)
 	tripPlanRepo := repository.NewTripPlanRepository(db)
+	tripSlotRepo := repository.NewTripSlotRepository(db)
 	userRepo := repository.NewUserRepository(db)
 	bookingRepo := repository.NewBookingRepository(db)
 	notificationRepo := repository.NewNotificationRepository(db)
@@ -83,25 +88,31 @@ func main() {
 	reviewRepo := repository.NewReviewRepository(db)
 	complaintRepo := repository.NewComplaintRepository(db)
 	trackingRepo := repository.NewTrackingRepository(db)
+	paymentRepo := repository.NewPaymentRepository(db)
+	razorpayService := service.NewRazorpayService()
 
 	notificationUsecase := usecase.NewNotificationUsecase(notificationRepo)
 	tripUsecase := usecase.NewTripUsecase(tripRepo)
 	tripPlanUsecase := usecase.NewTripPlanUsecase(tripPlanRepo)
-	adminUsecase := usecase.NewAdminUsecase(userRepo)
-	roleUsecase := usecase.NewRoleUsecase(roleRepo, userRepo)
+	tripSlotUsecase := usecase.NewTripSlotUsecase(tripSlotRepo, tripRepo, vehicleRepo, db)
+	adminUsecase := usecase.NewAdminUsecase(userRepo, roleRepo, db)
+	roleUsecase := usecase.NewRoleUsecase(roleRepo, userRepo, db)
 	permissionUsecase := usecase.NewPermissionUsecase(permissionRepo, roleRepo, userRepo)
-	vehicleUsecase := usecase.NewVehicleUsecase(vehicleRepo, tripRepo, userRepo)
+	vehicleUsecase := usecase.NewVehicleUsecase(vehicleRepo, tripRepo, userRepo, db)
 	offerUsecase := usecase.NewOfferUsecase(offerRepo)
-	reviewUsecase := usecase.NewReviewUsecase(reviewRepo, bookingRepo, tripRepo)
+	reviewUsecase := usecase.NewReviewUsecase(reviewRepo, bookingRepo, tripRepo, db)
 	complaintUsecase := usecase.NewComplaintUsecase(complaintRepo, bookingRepo)
 	trackingUsecase := usecase.NewTrackingUsecase(trackingRepo, bookingRepo, vehicleRepo)
-	bookingUsecase := usecase.NewBookingUsecase(bookingRepo, tripRepo, userRepo, offerRepo, db, notificationUsecase)
-	aiTripRequestUsecase := usecase.NewAITripRequestUsecase(aiTripRequestRepo, tripRepo, userRepo, notificationUsecase)
+	paymentUsecase := usecase.NewPaymentUsecase(paymentRepo,bookingRepo,razorpayService)
+	bookingUsecase := usecase.NewBookingUsecase(bookingRepo, tripRepo, userRepo, offerRepo, db, notificationUsecase, tripSlotRepo)
+	aiTripRequestUsecase := usecase.NewAITripRequestUsecase(aiTripRequestRepo, tripRepo, userRepo, notificationUsecase, db)
 
 	tripHandler := handler.NewTripHandler(tripUsecase)
 	tripPlanHandler := handler.NewTripPlanHandler(tripPlanUsecase)
+	tripSlotHandler := handler.NewTripSlotHandler(tripSlotUsecase)
 	adminHandler := handler.NewAdminHandler(adminUsecase)
-	aiHandler := handler.NewAIHandler(geminiClient, aiTripRequestUsecase)
+	ragUsecase := usecase.NewRAGUsecase(tripRepo)
+	aiHandler := handler.NewAIHandler(geminiClient,aiTripRequestUsecase,ragUsecase)
 	bookingHandler := handler.NewBookingHandler(bookingUsecase)
 	notificationHandler := handler.NewNotificationHandler(notificationUsecase)
 	roleHandler := handler.NewRoleHandler(roleUsecase, permissionUsecase)
@@ -111,6 +122,7 @@ func main() {
 	reviewHandler := handler.NewReviewHandler(reviewUsecase)
 	complaintHandler := handler.NewComplaintHandler(complaintUsecase)
 	trackingHandler := handler.NewTrackingHandler(trackingUsecase)
+	paymentHandler := handler.NewPaymentHandler(paymentUsecase)
 
 	authMiddleware := middleware.AuthMiddleware(userRepo)
 	adminMiddleware := middleware.RoleMiddleware("admin")
@@ -118,6 +130,7 @@ func main() {
 
 	routes.AuthRoutes(app, db)
 	routes.TripRoutes(app, tripHandler, authMiddleware, adminMiddleware)
+	routes.TripSlotRoutes(app, tripSlotHandler, authMiddleware, adminMiddleware)
 	routes.TripPlanRoutes(app, tripPlanHandler, authMiddleware, adminMiddleware)
 	routes.AdminRoutes(app, adminHandler, authMiddleware, adminMiddleware)
 	routes.SetupAIRoutes(app, aiHandler, authMiddleware, adminMiddleware)
@@ -129,7 +142,37 @@ func main() {
 	routes.ReviewRoutes(app, reviewHandler, authMiddleware, permissionMiddleware)
 	routes.ComplaintRoutes(app, complaintHandler, authMiddleware, permissionMiddleware)
 	routes.TrackingRoutes(app, trackingHandler, authMiddleware, permissionMiddleware)
+	routes.PaymentRoutes(app,paymentHandler,authMiddleware)
 
-	log.Println("Server running on port 8997")
-	log.Fatal(app.Listen(":8997"))
+	port := config.GetEnv("PORT", "8997")
+	log.Printf("Server running on port %s", port)
+	log.Fatal(app.Listen(":" + port))
+}
+
+func validateStartupEnv() error {
+	required := []string{
+		"DB_HOST",
+		"DB_USER",
+		"DB_PASSWORD",
+		"DB_NAME",
+		"DB_PORT",
+		"SMTP_HOST",
+		"SMTP_PORT",
+		"EMAIL_FROM",
+		"EMAIL_PASSWORD",
+		"PORT",
+
+		"RAZORPAY_KEY_ID",
+		"RAZORPAY_KEY_SECRET",
+	}
+
+	if err := config.ValidateRequiredEnv(required...); err != nil {
+		return err
+	}
+
+	if strings.TrimSpace(os.Getenv("JWT_SECRET")) == "" && strings.TrimSpace(os.Getenv("JWT_SECRETKEY")) == "" {
+		return errors.New("missing required environment variable: JWT_SECRET")
+	}
+
+	return nil
 }

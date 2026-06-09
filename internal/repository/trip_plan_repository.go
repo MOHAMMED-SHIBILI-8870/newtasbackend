@@ -8,6 +8,7 @@ import (
 
 type TripPlanRepository interface {
 	Create(ctx context.Context, plan *entity.TripPlan) error
+	CreateMany(ctx context.Context, plans []entity.TripPlan) error
 	GetByTripID(ctx context.Context, tripID uint) ([]entity.TripPlan, error)
 	Delete(ctx context.Context, id uint) error
 }
@@ -22,6 +23,16 @@ func NewTripPlanRepository(db *gorm.DB) TripPlanRepository {
 
 func (r *tripPlanRepository) Create(ctx context.Context, plan *entity.TripPlan) error {
 	return r.db.WithContext(ctx).Create(plan).Error
+}
+
+func (r *tripPlanRepository) CreateMany(ctx context.Context, plans []entity.TripPlan) error {
+	if len(plans) == 0 {
+		return nil
+	}
+
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return tx.Create(&plans).Error
+	})
 }
 
 func (r *tripPlanRepository) GetByTripID(ctx context.Context, tripID uint) ([]entity.TripPlan, error) {

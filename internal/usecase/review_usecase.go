@@ -8,23 +8,29 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type ReviewUsecase struct {
 	reviewRepo  repository.ReviewRepository
 	bookingRepo repository.BookingRepository
 	tripRepo    repository.TripRepository
+	db          *gorm.DB
 }
 
 func NewReviewUsecase(
 	reviewRepo repository.ReviewRepository,
 	bookingRepo repository.BookingRepository,
 	tripRepo repository.TripRepository,
+	db *gorm.DB,
 ) *ReviewUsecase {
 	return &ReviewUsecase{
 		reviewRepo:  reviewRepo,
 		bookingRepo: bookingRepo,
 		tripRepo:    tripRepo,
+		db:          db,
 	}
 }
 
@@ -39,41 +45,8 @@ func (u *ReviewUsecase) CreateReview(ctx context.Context, userID uint, tripID ui
 		return nil, errors.New("rating must be between 1 and 5")
 	}
 
-	trip, err := u.tripRepo.GetByID(ctx, tripID)
-	if err != nil {
-		return nil, err
-	}
-	if trip == nil {
-		return nil, fmt.Errorf("trip not found")
-	}
-	if time.Now().Before(trip.EndDate) {
-		return nil, errors.New("trip has not been completed yet")
-	}
-
-	bookings, err := u.bookingRepo.GetBookingsByUserID(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-
-	booked := false
-	for _, booking := range bookings {
-		if booking.TripID == tripID && booking.Status != "cancelled" {
-			booked = true
-			break
-		}
-	}
-	if !booked {
-		return nil, errors.New("booking not found for this trip")
-	}
-
-	existingReviews, err := u.reviewRepo.GetByUserID(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	for _, review := range existingReviews {
-		if review.TripID == tripID {
-			return nil, errors.New("review already exists for this trip")
-		}
+	if u.db == nil {
+		return nil, errors.New("database unavailable")
 	}
 
 	review := &entity.Review{
@@ -83,7 +56,43 @@ func (u *ReviewUsecase) CreateReview(ctx context.Context, userID uint, tripID ui
 		Comment: strings.TrimSpace(comment),
 	}
 
-	if err := u.reviewRepo.Create(ctx, review); err != nil {
+	if err := u.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var trip entity.Trip
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Preload("Plans").
+			First(&trip, tripID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("trip not found")
+			}
+			return err
+		}
+		if time.Now().Before(trip.EndDate) {
+			return errors.New("trip has not been completed yet")
+		}
+
+		var bookingCount int64
+		if err := tx.Model(&entity.Booking{}).
+			Where("user_id = ? AND trip_id = ? AND status <> ?", userID, tripID, "cancelled").
+			Count(&bookingCount).Error; err != nil {
+			return err
+		}
+		if bookingCount == 0 {
+			return errors.New("booking not found for this trip")
+		}
+
+		var existing entity.Review
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("user_id = ? AND trip_id = ?", userID, tripID).
+			First(&existing).Error
+		if err == nil {
+			return errors.New("review already exists for this trip")
+		}
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+
+		return tx.Create(review).Error
+	}); err != nil {
 		return nil, err
 	}
 

@@ -20,7 +20,7 @@ type UserRepository interface {
 	UpdateUserStatus(ctx context.Context, id uint, isBlocked bool) error
 	UpdateUserRole(ctx context.Context, id uint, newRole string) error
 	CreateUser(ctx context.Context, user *entity.User) error
-	DeleteUser(id uint) error
+	DeleteUser(ctx context.Context, id uint) error
 }
 
 type userRepository struct {
@@ -181,9 +181,10 @@ func (r *userRepository) CreateUser(
 
 // infrastructure/repository/admin_repo_impl.go
 
-func (r *userRepository) DeleteUser(userID uint) error {
-	// Start a transaction
-	return r.db.Transaction(func(tx *gorm.DB) error {
+func (r *userRepository) DeleteUser(ctx context.Context, userID uint) error {
+	// Refresh tokens must be removed in the same transaction as the user delete
+	// so a cancellation or failure cannot leave orphaned credentials behind.
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 
 		// 1. Delete associated refresh tokens first
 		if err := tx.Where("user_id = ?", userID).Delete(&entity.RefreshToken{}).Error; err != nil {
