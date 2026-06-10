@@ -74,6 +74,7 @@ func main() {
 		AllowCredentials: true,
 	}))
 
+	guideRepo := repository.NewGuideRepository(db)
 	tripRepo := repository.NewTripRepository(db)
 	tripPlanRepo := repository.NewTripPlanRepository(db)
 	tripSlotRepo := repository.NewTripSlotRepository(db)
@@ -90,7 +91,9 @@ func main() {
 	trackingRepo := repository.NewTrackingRepository(db)
 	paymentRepo := repository.NewPaymentRepository(db)
 	razorpayService := service.NewRazorpayService()
+	chatRepo := repository.NewMemoryChatRepository()
 
+	guideUsecase := usecase.NewGuideUsecase(guideRepo)
 	notificationUsecase := usecase.NewNotificationUsecase(notificationRepo)
 	tripUsecase := usecase.NewTripUsecase(tripRepo)
 	tripPlanUsecase := usecase.NewTripPlanUsecase(tripPlanRepo)
@@ -106,7 +109,9 @@ func main() {
 	paymentUsecase := usecase.NewPaymentUsecase(paymentRepo,bookingRepo,razorpayService)
 	bookingUsecase := usecase.NewBookingUsecase(bookingRepo, tripRepo, userRepo, offerRepo, db, notificationUsecase, tripSlotRepo)
 	aiTripRequestUsecase := usecase.NewAITripRequestUsecase(aiTripRequestRepo, tripRepo, userRepo, notificationUsecase, db)
+	chatUsecase := usecase.NewChatUsecase(chatRepo)
 
+	guideHandler := handler.NewGuideHandler(guideUsecase)
 	tripHandler := handler.NewTripHandler(tripUsecase)
 	tripPlanHandler := handler.NewTripPlanHandler(tripPlanUsecase)
 	tripSlotHandler := handler.NewTripSlotHandler(tripSlotUsecase)
@@ -123,12 +128,14 @@ func main() {
 	complaintHandler := handler.NewComplaintHandler(complaintUsecase)
 	trackingHandler := handler.NewTrackingHandler(trackingUsecase)
 	paymentHandler := handler.NewPaymentHandler(paymentUsecase)
+	chatHandler := handler.NewChatHandler(chatUsecase)
 
 	authMiddleware := middleware.AuthMiddleware(userRepo)
 	adminMiddleware := middleware.RoleMiddleware("admin")
 	permissionMiddleware := middleware.PermissionMiddleware(permissionUsecase)
-
+	
 	routes.AuthRoutes(app, db)
+	routes.GuideRoutes(app,guideHandler,authMiddleware)
 	routes.TripRoutes(app, tripHandler, authMiddleware, adminMiddleware)
 	routes.TripSlotRoutes(app, tripSlotHandler, authMiddleware, adminMiddleware)
 	routes.TripPlanRoutes(app, tripPlanHandler, authMiddleware, adminMiddleware)
@@ -143,6 +150,7 @@ func main() {
 	routes.ComplaintRoutes(app, complaintHandler, authMiddleware, permissionMiddleware)
 	routes.TrackingRoutes(app, trackingHandler, authMiddleware, permissionMiddleware)
 	routes.PaymentRoutes(app,paymentHandler,authMiddleware)
+	routes.MapChatRoutes(app,chatHandler,authMiddleware)
 
 	port := config.GetEnv("PORT", "8997")
 	log.Printf("Server running on port %s", port)

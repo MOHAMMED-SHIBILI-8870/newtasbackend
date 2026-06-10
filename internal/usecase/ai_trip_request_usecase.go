@@ -86,7 +86,7 @@ func (u *AITripRequestUsecase) CreateRequest(ctx context.Context, userID uint, i
 	}
 
 	if u.notificationUsecase != nil && u.userRepo != nil {
-		admins, err := u.userRepo.GetUsers(ctx, "admin", "")
+		admins, err := u.userRepo.GetUsers(ctx, 0,"admin", "")
 		if err == nil {
 			for _, admin := range admins {
 				title := "AI trip request pending review"

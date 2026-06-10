@@ -247,7 +247,7 @@ func (u *BookingUsecase) BookTrip(
 	if u.notificationUsecase != nil && u.userRepo != nil {
 		user, err := u.userRepo.GetByID(ctx, userID)
 		if err == nil && user != nil {
-			admins, err := u.userRepo.GetUsers(ctx, "admin", "")
+			admins, err := u.userRepo.GetUsers(ctx,0 ,"admin", "")
 			if err == nil {
 				for _, admin := range admins {
 					if err := u.notificationUsecase.CreateAdminBookingNotification(ctx, admin.ID, createdBooking.ID, "New booking from "+user.Email); err != nil {
@@ -480,7 +480,7 @@ func (u *BookingUsecase) BookSlot(
 	if u.notificationUsecase != nil && u.userRepo != nil {
 		user, err := u.userRepo.GetByID(ctx, userID)
 		if err == nil && user != nil {
-			admins, err := u.userRepo.GetUsers(ctx, "admin", "")
+			admins, err := u.userRepo.GetUsers(ctx, userID,"admin", "")
 			if err == nil {
 				for _, admin := range admins {
 					if err := u.notificationUsecase.CreateAdminBookingNotification(ctx, admin.ID, createdBooking.ID, "New slot booking from "+user.Email); err != nil {

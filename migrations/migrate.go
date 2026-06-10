@@ -10,7 +10,6 @@ func Migrations() error {
 		&entity.User{},
 		&entity.RefreshToken{},
 		&entity.OTP{},
-		&entity.ChatResponse{},
 		&entity.AITripRequest{},
 		&entity.Trip{},
 		&entity.TripPlan{},
@@ -20,6 +19,7 @@ func Migrations() error {
 		&entity.Notification{},
 		&entity.Payment{},
 		&entity.Guide{},
+		
 	); err != nil {
 		return err
 	}

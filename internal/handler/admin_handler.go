@@ -41,7 +41,14 @@ func (h *AdminHandler) ListUsers(c *fiber.Ctx) error {
 	role := c.Query("role")
 	search := c.Query("search")
 
-	users, err := h.usecase.FetchUsers(c.Context(), role, search)
+	currentAdminID := middleware.GetAuthUserID(c)
+
+	users, err := h.usecase.FetchUsers(
+		c.Context(),
+		currentAdminID,
+		role,
+		search,
+	)
 	if err != nil {
 		return response.Fail(c, fiber.StatusInternalServerError, "failed to fetch users", err)
 	}

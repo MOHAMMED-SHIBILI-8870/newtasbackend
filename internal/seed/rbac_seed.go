@@ -28,6 +28,12 @@ func SeedRBAC() {
 		{Key: "manage_fleet", Name: "Manage Fleet", Description: "Create and manage vehicles"},
 		{Key: "manage_reviews", Name: "Manage Reviews", Description: "Moderate reviews and ratings"},
 		{Key: "manage_complaints", Name: "Manage Complaints", Description: "View and resolve complaints"},
+
+		// chat permission
+
+		{Key: "chat.read", Name: "Read Chats", Description: "Can view chats"},
+		{Key: "chat.send", Name: "Send Messages", Description: "Can send messages"},
+		{Key: "chat.delete", Name: "Delete Messages", Description: "Can delete messages"},
 	}
 
 	for _, role := range roles {
@@ -45,12 +51,12 @@ func SeedRBAC() {
 	}
 
 	assignments := map[string][]string{
-		"admin":   {"manage_users", "manage_bookings", "manage_tracking", "manage_chat", "manage_offers", "manage_fleet", "manage_reviews", "manage_complaints"},
-		"agency":  {"manage_bookings", "manage_offers", "manage_fleet"},
-		"guide":   {"manage_bookings", "manage_tracking", "manage_chat"},
-		"driver":  {"manage_tracking"},
-		"support": {"manage_chat", "manage_complaints"},
-		"user":    {},
+		"admin":   {"manage_users", "manage_bookings", "manage_tracking", "manage_chat", "manage_offers", "manage_fleet", "manage_reviews", "manage_complaints","chat.read","chat.send","chat.delete"},
+		"agency":  {"manage_bookings", "manage_offers", "manage_fleet","chat.read","chat.send"},
+		"guide":   {"manage_bookings", "manage_tracking", "manage_chat","chat.read","chat.send"},
+		"driver":  {"manage_tracking","chat.read","chat.send"},
+		"support": {"manage_chat", "manage_complaints","chat.read","chat.send"},
+		"user":    {"chat.read","chat.send"},
 	}
 
 	for roleName, keys := range assignments {

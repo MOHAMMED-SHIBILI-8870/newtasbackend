@@ -16,7 +16,7 @@ import (
 type UserRepository interface {
 	GetByID(ctx context.Context, id uint) (*entity.User, error)
 	GetByEmail(ctx context.Context, email string) (*entity.User, error)
-	GetUsers(ctx context.Context, role string, search string) ([]entity.User, error)
+	GetUsers(ctx context.Context,currentUserID uint,role string,search string) ([]entity.User, error)
 	UpdateUserStatus(ctx context.Context, id uint, isBlocked bool) error
 	UpdateUserRole(ctx context.Context, id uint, newRole string) error
 	CreateUser(ctx context.Context, user *entity.User) error
@@ -83,6 +83,7 @@ func (r *userRepository) GetByEmail(
 // 📄 Get users with filters
 func (r *userRepository) GetUsers(
 	ctx context.Context,
+	currentUserID uint,
 	role string,
 	search string,
 ) ([]entity.User, error) {
@@ -91,7 +92,8 @@ func (r *userRepository) GetUsers(
 
 	query := r.db.WithContext(ctx).
 		Model(&entity.User{}).
-		Omit("HashPassword")
+		Omit("HashPassword").
+		Where("id <> ?", currentUserID)
 
 	// Filter by role
 	if role != "" {
@@ -111,7 +113,6 @@ func (r *userRepository) GetUsers(
 		)
 	}
 
-	// Order results
 	err := query.
 		Order("id ASC").
 		Find(&users).Error

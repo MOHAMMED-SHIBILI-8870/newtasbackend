@@ -17,7 +17,7 @@ import (
 )
 
 type AdminUsecase interface {
-	FetchUsers(ctx context.Context, role string, search string) ([]entity.User, error)
+	FetchUsers(ctx context.Context, currentAdminID uint, role string, search string) ([]entity.User, error)
 	ToggleUserBlock(ctx context.Context, targetID uint) (string, bool, error)
 	ChangeUserRole(ctx context.Context, targetID uint, newRole string) error
 	CreateUserByAdmin(ctx context.Context, req entity.AdminCreateUserRequest) (entity.User, error)
@@ -41,10 +41,17 @@ func NewAdminUsecase(r repository.UserRepository, roleRepo repository.RoleReposi
 // 📄 Fetch users
 func (u *adminUsecase) FetchUsers(
 	ctx context.Context,
+	currentUserID uint,
 	role string,
 	search string,
 ) ([]entity.User, error) {
-	return u.repo.GetUsers(ctx, NormalizeRole(role), search)
+
+	return u.repo.GetUsers(
+		ctx,
+		currentUserID,
+		role,
+		search,
+	)
 }
 
 // 🔒 Toggle block / unblock user
