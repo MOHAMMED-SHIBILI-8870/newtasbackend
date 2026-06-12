@@ -77,3 +77,26 @@ func (r *MemoryChatRepository) ValidatePermission(ctx context.Context, userID, g
 	}
 	return true, nil // Mocked to true for demonstration
 }
+
+func (r *MemoryChatRepository) MarkMessagesAsRead(ctx context.Context, roomID string, userID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	messages, exists := r.messages[roomID]
+	if !exists {
+		return nil // No messages to update
+	}
+
+	// Loop through and mark messages as read if they belong to the other user
+	for i := range messages {
+		// Assuming your entity.Message has a SenderID (or UserID) and IsRead field.
+		// We only mark messages as read if the current user is NOT the sender.
+		if messages[i].SenderID != userID { 
+			messages[i].IsRead = true
+		}
+	}
+
+	// Save the modified slice back to the map
+	r.messages[roomID] = messages
+	return nil
+}

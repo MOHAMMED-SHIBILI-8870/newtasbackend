@@ -55,6 +55,8 @@ func (u *BookingUsecase) BookTrip(
 	userID uint,
 	seats int,
 	couponCode string,
+	startDate *time.Time,
+	endDate *time.Time,
 ) (*entity.Booking, error) {
 	if u == nil || u.db == nil || u.bookingRepo == nil || u.tripRepo == nil || u.userRepo == nil {
 		return nil, errors.New("booking service unavailable")
@@ -77,12 +79,21 @@ func (u *BookingUsecase) BookTrip(
 		return nil, errors.New("trip is not available for booking")
 	}
 
+	checkStart := trip.StartDate
+	if startDate != nil {
+		checkStart = *startDate
+	}
+	checkEnd := trip.EndDate
+	if endDate != nil {
+		checkEnd = *endDate
+	}
+
 	// CHECK FOR OVERLAPPING BOOKINGS
 	overlap, err := u.bookingRepo.HasTripOverlap(
 		ctx,
 		userID,
-		trip.StartDate,
-		trip.EndDate,
+		checkStart,
+		checkEnd,
 	)
 	if err != nil {
 		return nil, err
@@ -90,7 +101,7 @@ func (u *BookingUsecase) BookTrip(
 
 	if overlap {
 		return nil, errors.New(
-			"you already have another trip booked during this period",
+			"overlap: you already have another trip booked during this period",
 		)
 	}
 
@@ -108,6 +119,12 @@ func (u *BookingUsecase) BookTrip(
 		}
 		if offer.ExpiryDate.Before(time.Now()) {
 			return nil, errors.New("offer has expired")
+		}
+		if offer.MaxUsage > 0 && offer.CurrentUsage >= offer.MaxUsage {
+			return nil, errors.New("offer usage limit reached")
+		}
+		if offer.TripID != nil && *offer.TripID != tripID {
+			return nil, errors.New("offer is not applicable for this trip")
 		}
 	}
 
@@ -149,14 +166,21 @@ func (u *BookingUsecase) BookTrip(
 		coupon := ""
 		finalAmountMinor := baseAmountMinor
 		if offer != nil {
-			discountPercent = roundMoney(offer.DiscountPercent)
 			offerID = &offer.ID
 			coupon = offer.Code
-			discountMinor := int64(math.Round(float64(baseAmountMinor) * discountPercent / 100))
-			finalAmountMinor -= discountMinor
+			if offer.DiscountType == "fixed" {
+				finalAmountMinor -= moneyToMinorUnits(offer.FixedDiscount)
+			} else {
+				discountPercent = roundMoney(offer.DiscountPercent)
+				discountMinor := int64(math.Round(float64(baseAmountMinor) * discountPercent / 100))
+				finalAmountMinor -= discountMinor
+			}
 			if finalAmountMinor < 0 {
 				finalAmountMinor = 0
 			}
+
+			// Increment offer usage
+			tx.Model(&entity.Offer{}).Where("id = ?", offer.ID).Update("current_usage", gorm.Expr("current_usage + ?", 1))
 		}
 		finalAmount := moneyFromMinorUnits(finalAmountMinor)
 
@@ -175,6 +199,9 @@ func (u *BookingUsecase) BookTrip(
 			TripID:    tripID,
 			VehicleID: vehicleID,
 			OfferID:   offerID,
+
+			StartDate: startDate,
+			EndDate:   endDate,
 
 			Status: "pending_payment",
 
@@ -268,6 +295,8 @@ func (u *BookingUsecase) BookSlot(
 	seats int,
 	couponCode string,
 	bookingType string,
+	startDate *time.Time,
+	endDate *time.Time,
 ) (*entity.Booking, error) {
 	if u == nil || u.db == nil || u.bookingRepo == nil || u.tripRepo == nil || u.userRepo == nil || u.slotRepo == nil {
 		return nil, errors.New("booking service unavailable")
@@ -301,6 +330,9 @@ func (u *BookingUsecase) BookSlot(
 		if offer.ExpiryDate.Before(time.Now()) {
 			return nil, errors.New("offer has expired")
 		}
+		if offer.MaxUsage > 0 && offer.CurrentUsage >= offer.MaxUsage {
+			return nil, errors.New("offer usage limit reached")
+		}
 	}
 
 	var createdBooking *entity.Booking
@@ -323,12 +355,25 @@ func (u *BookingUsecase) BookSlot(
 			return errors.New("slot is not available for booking")
 		}
 
+		if offer != nil && offer.TripID != nil && *offer.TripID != slot.TripID {
+			return errors.New("offer is not applicable for this trip")
+		}
+
+		checkStart := slot.StartDate
+		if startDate != nil {
+			checkStart = *startDate
+		}
+		checkEnd := slot.EndDate
+		if endDate != nil {
+			checkEnd = *endDate
+		}
+
 		// Prevent overlapping trip bookings
 		overlap, err := u.bookingRepo.HasOverlappingBooking(
 			ctx,
 			userID,
-			slot.StartDate,
-			slot.EndDate,
+			checkStart,
+			checkEnd,
 		)
 
 		if err != nil {
@@ -337,7 +382,7 @@ func (u *BookingUsecase) BookSlot(
 
 		if overlap {
 			return errors.New(
-				"you already have another trip booked during this period",
+				"overlap: you already have another trip booked during this period",
 			)
 		}
 
@@ -370,14 +415,21 @@ func (u *BookingUsecase) BookSlot(
 		coupon := ""
 		finalAmountMinor := baseAmountMinor
 		if offer != nil {
-			discountPercent = roundMoney(offer.DiscountPercent)
 			offerID = &offer.ID
 			coupon = offer.Code
-			discountMinor := int64(math.Round(float64(baseAmountMinor) * discountPercent / 100))
-			finalAmountMinor -= discountMinor
+			if offer.DiscountType == "fixed" {
+				finalAmountMinor -= moneyToMinorUnits(offer.FixedDiscount)
+			} else {
+				discountPercent = roundMoney(offer.DiscountPercent)
+				discountMinor := int64(math.Round(float64(baseAmountMinor) * discountPercent / 100))
+				finalAmountMinor -= discountMinor
+			}
 			if finalAmountMinor < 0 {
 				finalAmountMinor = 0
 			}
+
+			// Increment offer usage
+			tx.Model(&entity.Offer{}).Where("id = ?", offer.ID).Update("current_usage", gorm.Expr("current_usage + ?", 1))
 		}
 		finalAmount := moneyFromMinorUnits(finalAmountMinor)
 
@@ -420,6 +472,9 @@ func (u *BookingUsecase) BookSlot(
 			SlotID:    &slot.ID,
 			VehicleID: slot.VehicleID,
 			OfferID:   offerID,
+
+			StartDate: startDate,
+			EndDate:   endDate,
 
 			BookingType: bookingType,
 			Status:      "pending_payment",
@@ -510,8 +565,10 @@ func (u *BookingUsecase) GetUserBookings(
 // Add this method to your existing BookingUsecase struct in internal/usecase/booking.go
 
 func (u *BookingUsecase) GetBookingByID(
-	ctx context.Context, 
+	ctx context.Context,
 	bookingID uint,
+	callerID uint,
+	callerRole string,
 ) (*entity.Booking, error) {
 	if u == nil || u.bookingRepo == nil {
 		return nil, errors.New("booking service unavailable")
@@ -528,6 +585,11 @@ func (u *BookingUsecase) GetBookingByID(
 			return nil, errors.New("booking record not found")
 		}
 		return nil, err
+	}
+
+	// Ownership validation: only the booking owner or an admin may view
+	if callerRole != "admin" && booking.UserID != callerID {
+		return nil, errors.New("access denied")
 	}
 
 	return booking, nil

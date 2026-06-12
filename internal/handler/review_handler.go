@@ -43,6 +43,7 @@ func mapReviewResponse(review entity.Review) dto.ReviewResponse {
 		ID:        review.ID,
 		UserID:    review.UserID,
 		TripID:    review.TripID,
+		GuideID:   review.GuideID,
 		Rating:    review.Rating,
 		Comment:   review.Comment,
 		CreatedAt: review.CreatedAt,
@@ -57,7 +58,7 @@ func (h *ReviewHandler) CreateReview(c *fiber.Ctx) error {
 	}
 
 	userID := middleware.GetAuthUserID(c)
-	review, err := h.usecase.CreateReview(c.Context(), userID, input.TripID, input.Rating, input.Comment)
+	review, err := h.usecase.CreateReview(c.Context(), userID, input.TripID, input.GuideID, input.Rating, input.Comment)
 	if err != nil {
 		return response.Fail(c, reviewStatusFromErr(err), "failed to create review", err)
 	}

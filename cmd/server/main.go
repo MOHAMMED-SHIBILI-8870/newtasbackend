@@ -74,6 +74,8 @@ func main() {
 		AllowCredentials: true,
 	}))
 
+	app.Static("/uploads", "./uploads")
+
 	guideRepo := repository.NewGuideRepository(db)
 	tripRepo := repository.NewTripRepository(db)
 	tripPlanRepo := repository.NewTripPlanRepository(db)
@@ -91,7 +93,9 @@ func main() {
 	trackingRepo := repository.NewTrackingRepository(db)
 	paymentRepo := repository.NewPaymentRepository(db)
 	razorpayService := service.NewRazorpayService()
-	chatRepo := repository.NewMemoryChatRepository()
+	chatRepo := repository.NewPostgresChatRepository(config.DB)
+	supportRepo := repository.NewSupportRepository(db)
+	verificationRepo := repository.NewVerificationRepository(db)
 
 	guideUsecase := usecase.NewGuideUsecase(guideRepo)
 	notificationUsecase := usecase.NewNotificationUsecase(notificationRepo)
@@ -109,7 +113,10 @@ func main() {
 	paymentUsecase := usecase.NewPaymentUsecase(paymentRepo,bookingRepo,razorpayService)
 	bookingUsecase := usecase.NewBookingUsecase(bookingRepo, tripRepo, userRepo, offerRepo, db, notificationUsecase, tripSlotRepo)
 	aiTripRequestUsecase := usecase.NewAITripRequestUsecase(aiTripRequestRepo, tripRepo, userRepo, notificationUsecase, db)
-	chatUsecase := usecase.NewChatUsecase(chatRepo)
+	chatUsecase := usecase.NewChatUsecase(chatRepo, userRepo)
+	supportUsecase := usecase.NewSupportUsecase(supportRepo)
+	analyticsUsecase := usecase.NewAnalyticsUsecase(db)
+	verificationUsecase := usecase.NewVerificationUsecase(verificationRepo)
 
 	guideHandler := handler.NewGuideHandler(guideUsecase)
 	tripHandler := handler.NewTripHandler(tripUsecase)
@@ -129,10 +136,13 @@ func main() {
 	trackingHandler := handler.NewTrackingHandler(trackingUsecase)
 	paymentHandler := handler.NewPaymentHandler(paymentUsecase)
 	chatHandler := handler.NewChatHandler(chatUsecase)
+	supportHandler := handler.NewSupportHandler(supportUsecase)
+	analyticsHandler := handler.NewAnalyticsHandler(analyticsUsecase)
+	verificationHandler := handler.NewVerificationHandler(verificationUsecase)
 
 	authMiddleware := middleware.AuthMiddleware(userRepo)
 	adminMiddleware := middleware.RoleMiddleware("admin")
-	permissionMiddleware := middleware.PermissionMiddleware(permissionUsecase)
+	permissionMiddleware := middleware.RequirePermission(permissionUsecase)
 	
 	routes.AuthRoutes(app, db)
 	routes.GuideRoutes(app,guideHandler,authMiddleware)
@@ -151,6 +161,9 @@ func main() {
 	routes.TrackingRoutes(app, trackingHandler, authMiddleware, permissionMiddleware)
 	routes.PaymentRoutes(app,paymentHandler,authMiddleware)
 	routes.MapChatRoutes(app,chatHandler,authMiddleware)
+	routes.SupportRoutes(app,supportHandler,authMiddleware)
+	routes.AnalyticsRoutes(app,analyticsHandler,authMiddleware,permissionMiddleware)
+	routes.VerificationRoutes(app,verificationHandler,authMiddleware)
 
 	port := config.GetEnv("PORT", "8997")
 	log.Printf("Server running on port %s", port)

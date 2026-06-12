@@ -7,6 +7,10 @@ type OfferRequest struct {
 	Title           string    `json:"title"`
 	Description     string    `json:"description"`
 	DiscountPercent float64   `json:"discount_percent"`
+	DiscountType    string    `json:"discount_type"`
+	FixedDiscount   float64   `json:"fixed_discount"`
+	MaxUsage        int       `json:"max_usage"`
+	TripID          *uint     `json:"trip_id,omitempty"`
 	ExpiryDate      time.Time `json:"expiry_date"`
 	Active          bool      `json:"active"`
 }
@@ -21,6 +25,11 @@ type OfferResponse struct {
 	Title           string    `json:"title"`
 	Description     string    `json:"description,omitempty"`
 	DiscountPercent float64   `json:"discount_percent"`
+	DiscountType    string    `json:"discount_type"`
+	FixedDiscount   float64   `json:"fixed_discount"`
+	MaxUsage        int       `json:"max_usage"`
+	CurrentUsage    int       `json:"current_usage"`
+	TripID          *uint     `json:"trip_id,omitempty"`
 	ExpiryDate      time.Time `json:"expiry_date"`
 	Active          bool      `json:"active"`
 	CreatedAt       time.Time `json:"created_at"`

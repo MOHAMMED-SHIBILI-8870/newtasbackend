@@ -39,8 +39,12 @@ func normalizeVehicleType(value string) string {
 		return "Bus"
 	case "car":
 		return "Car"
-	case "traveler":
-		return "Traveler"
+	case "suv":
+		return "SUV"
+	case "van":
+		return "Van"
+	case "traveler", "tempo traveller":
+		return "Tempo Traveller"
 	default:
 		return ""
 	}
@@ -251,3 +255,43 @@ func (u *VehicleUsecase) GetVehicleByTripID(ctx context.Context, tripID uint) (*
 	}
 	return u.vehicleRepo.GetByTripID(ctx, tripID)
 }
+
+func (u *VehicleUsecase) AssignDriverToVehicle(ctx context.Context, actorID uint, actorRole string, vehicleID uint, driverID uint) error {
+	if vehicleID == 0 || driverID == 0 {
+		return errors.New("vehicle and driver ids are required")
+	}
+	if u.db == nil {
+		return errors.New("database unavailable")
+	}
+
+	return u.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var vehicle entity.Vehicle
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			First(&vehicle, vehicleID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("vehicle not found")
+			}
+			return err
+		}
+
+		if NormalizeRole(actorRole) != "admin" && vehicle.AgencyID != actorID {
+			return errors.New("access denied")
+		}
+
+		var driver entity.User
+		if err := tx.First(&driver, driverID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("driver not found")
+			}
+			return err
+		}
+
+		if NormalizeRole(driver.Role) != "driver" {
+			return errors.New("user is not a driver")
+		}
+
+		vehicle.DriverID = &driverID
+		return tx.Save(&vehicle).Error
+	})
+}
+

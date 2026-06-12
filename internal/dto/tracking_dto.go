@@ -4,7 +4,9 @@ import "time"
 
 type TrackingUpdateRequest struct {
 	BookingID uint    `json:"booking_id"`
-	VehicleID uint    `json:"vehicle_id"`
+	VehicleID *uint   `json:"vehicle_id,omitempty"`
+	DriverID  *uint   `json:"driver_id,omitempty"`
+	Type      string  `json:"type"`
 	Latitude  float64 `json:"latitude"`
 	Longitude float64 `json:"longitude"`
 }
@@ -12,7 +14,9 @@ type TrackingUpdateRequest struct {
 type TrackingResponse struct {
 	ID        uint      `json:"id"`
 	BookingID uint      `json:"booking_id"`
-	VehicleID uint      `json:"vehicle_id"`
+	VehicleID *uint     `json:"vehicle_id,omitempty"`
+	DriverID  *uint     `json:"driver_id,omitempty"`
+	Type      string    `json:"type"`
 	Latitude  float64   `json:"latitude"`
 	Longitude float64   `json:"longitude"`
 	CreatedAt time.Time `json:"created_at"`

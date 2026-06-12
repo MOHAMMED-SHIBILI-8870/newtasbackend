@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"backend/internal/middleware"
 	"backend/internal/response"
 	"backend/internal/usecase"
 	"fmt"
@@ -38,7 +39,12 @@ func (h *PaymentHandler) CreateAdvancePayment(c *fiber.Ctx) error {
 		)
 	}
 
-	paymentData, err := h.usecase.CreateAdvancePayment(c.Context(), uint(bookingID))
+	userID := middleware.GetAuthUserID(c)
+	if userID == 0 {
+		return response.Fail(c, fiber.StatusUnauthorized, "unauthorized", nil)
+	}
+
+	paymentData, err := h.usecase.CreateAdvancePayment(c.Context(), uint(bookingID), userID)
 	if err != nil {
 		return response.Fail(
 			c,
@@ -72,9 +78,15 @@ func (h *PaymentHandler) VerifyAdvancePayment(c *fiber.Ctx) error {
 		)
 	}
 
+	userID := middleware.GetAuthUserID(c)
+	if userID == 0 {
+		return response.Fail(c, fiber.StatusUnauthorized, "unauthorized", nil)
+	}
+
 	err = h.usecase.VerifyAdvancePayment(
 		c.Context(),
 		uint(bookingID),
+		userID,
 		input.OrderID,
 		input.PaymentID,
 		input.Signature,
@@ -107,9 +119,15 @@ func (h *PaymentHandler) CreateBalancePayment(c *fiber.Ctx) error {
 		)
 	}
 
+	userID := middleware.GetAuthUserID(c)
+	if userID == 0 {
+		return response.Fail(c, fiber.StatusUnauthorized, "unauthorized", nil)
+	}
+
 	payment, err := h.usecase.CreateBalancePayment(
 		c.Context(),
 		uint(bookingID),
+		userID,
 	)
 	if err != nil {
 		return response.Fail(
@@ -149,9 +167,15 @@ func (h *PaymentHandler) VerifyBalancePayment(c *fiber.Ctx) error {
 		)
 	}
 
+	userID := middleware.GetAuthUserID(c)
+	if userID == 0 {
+		return response.Fail(c, fiber.StatusUnauthorized, "unauthorized", nil)
+	}
+
 	err = h.usecase.VerifyBalancePayment(
 		c.Context(),
 		uint(bookingID),
+		userID,
 		input.OrderID,
 		input.PaymentID,
 		input.Signature,
@@ -171,4 +195,50 @@ func (h *PaymentHandler) VerifyBalancePayment(c *fiber.Ctx) error {
 		"balance payment verified successfully",
 		nil,
 	)
+}
+
+func (h *PaymentHandler) RefundPayment(c *fiber.Ctx) error {
+	paymentID, err := strconv.Atoi(c.Params("payment_id"))
+	if err != nil {
+		return response.Fail(c, fiber.StatusBadRequest, "invalid payment id", err)
+	}
+
+	role := middleware.GetAuthRole(c)
+	err = h.usecase.RefundPayment(c.Context(), uint(paymentID), role)
+	if err != nil {
+		return response.Fail(c, fiber.StatusBadRequest, "failed to refund payment", err)
+	}
+
+	return response.Success(c, fiber.StatusOK, "payment refunded successfully", nil)
+}
+
+func (h *PaymentHandler) GetPaymentHistory(c *fiber.Ctx) error {
+	userID := middleware.GetAuthUserID(c)
+	if userID == 0 {
+		return response.Fail(c, fiber.StatusUnauthorized, "unauthorized", nil)
+	}
+
+	history, err := h.usecase.GetPaymentHistory(c.Context(), userID)
+	if err != nil {
+		return response.Fail(c, fiber.StatusInternalServerError, "failed to load payment history", err)
+	}
+
+	return response.Success(c, fiber.StatusOK, "payment history loaded successfully", history)
+}
+
+func (h *PaymentHandler) GetInvoice(c *fiber.Ctx) error {
+	paymentID, err := strconv.Atoi(c.Params("payment_id"))
+	if err != nil {
+		return response.Fail(c, fiber.StatusBadRequest, "invalid payment id", err)
+	}
+
+	userID := middleware.GetAuthUserID(c)
+	role := middleware.GetAuthRole(c)
+
+	invoice, err := h.usecase.GetInvoice(c.Context(), uint(paymentID), userID, role)
+	if err != nil {
+		return response.Fail(c, fiber.StatusBadRequest, "failed to get invoice", err)
+	}
+
+	return response.Success(c, fiber.StatusOK, "invoice generated successfully", invoice)
 }

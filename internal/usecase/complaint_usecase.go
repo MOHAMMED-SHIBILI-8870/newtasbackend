@@ -109,7 +109,7 @@ func (u *ComplaintUsecase) GetComplaintByIDForUser(ctx context.Context, userID u
 	return complaint, nil
 }
 
-func (u *ComplaintUsecase) UpdateComplaintStatus(ctx context.Context, id uint, status string) error {
+func (u *ComplaintUsecase) UpdateComplaintStatus(ctx context.Context, id uint, status string, adminID *uint, adminNotes string) error {
 	if id == 0 {
 		return errors.New("complaint id is required")
 	}
@@ -123,6 +123,12 @@ func (u *ComplaintUsecase) UpdateComplaintStatus(ctx context.Context, id uint, s
 	}
 
 	complaint.Status = normalizeComplaintStatus(status)
+	if adminID != nil {
+		complaint.AdminID = adminID
+	}
+	if adminNotes != "" {
+		complaint.AdminNotes = adminNotes
+	}
 	return u.complaintRepo.Update(ctx, complaint)
 }
 

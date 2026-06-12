@@ -19,7 +19,9 @@ func Migrations() error {
 		&entity.Notification{},
 		&entity.Payment{},
 		&entity.Guide{},
-		
+		&entity.ChatRoom{},
+		&entity.Message{},
+		&entity.Verification{},
 	); err != nil {
 		return err
 	}

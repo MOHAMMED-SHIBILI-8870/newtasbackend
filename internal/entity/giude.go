@@ -9,6 +9,7 @@ type Guide struct {
 	Experience  int
 	Languages   string
 	IsAvailable bool      `gorm:"default:true"`
+	ChatEnabled bool      `gorm:"default:false"`
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 

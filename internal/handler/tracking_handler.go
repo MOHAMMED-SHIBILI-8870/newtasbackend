@@ -45,7 +45,7 @@ func (h *TrackingHandler) UpdateLocation(c *fiber.Ctx) error {
 		return response.Fail(c, fiber.StatusBadRequest, "invalid request body", err)
 	}
 
-	tracking, err := h.usecase.UpdateLocation(c.Context(), input.BookingID, input.VehicleID, input.Latitude, input.Longitude)
+	tracking, err := h.usecase.UpdateLocation(c.Context(), input.BookingID, *input.VehicleID, input.Latitude, input.Longitude)
 	if err != nil {
 		return response.Fail(c, trackingStatusFromErr(err), "failed to update tracking", err)
 	}
@@ -54,6 +54,8 @@ func (h *TrackingHandler) UpdateLocation(c *fiber.Ctx) error {
 		ID:        tracking.ID,
 		BookingID: tracking.BookingID,
 		VehicleID: tracking.VehicleID,
+		DriverID:  tracking.DriverID,
+		Type:      tracking.Type,
 		Latitude:  tracking.Latitude,
 		Longitude: tracking.Longitude,
 		CreatedAt: tracking.CreatedAt,
@@ -81,6 +83,8 @@ func (h *TrackingHandler) GetLatestByBookingID(c *fiber.Ctx) error {
 		ID:        tracking.ID,
 		BookingID: tracking.BookingID,
 		VehicleID: tracking.VehicleID,
+		DriverID:  tracking.DriverID,
+		Type:      tracking.Type,
 		Latitude:  tracking.Latitude,
 		Longitude: tracking.Longitude,
 		CreatedAt: tracking.CreatedAt,
@@ -107,6 +111,8 @@ func (h *TrackingHandler) GetTrackingsByBookingID(c *fiber.Ctx) error {
 			ID:        tracking.ID,
 			BookingID: tracking.BookingID,
 			VehicleID: tracking.VehicleID,
+			DriverID:  tracking.DriverID,
+			Type:      tracking.Type,
 			Latitude:  tracking.Latitude,
 			Longitude: tracking.Longitude,
 			CreatedAt: tracking.CreatedAt,
@@ -129,6 +135,8 @@ func (h *TrackingHandler) GetAllTracking(c *fiber.Ctx) error {
 			ID:        tracking.ID,
 			BookingID: tracking.BookingID,
 			VehicleID: tracking.VehicleID,
+			DriverID:  tracking.DriverID,
+			Type:      tracking.Type,
 			Latitude:  tracking.Latitude,
 			Longitude: tracking.Longitude,
 			CreatedAt: tracking.CreatedAt,
@@ -137,4 +145,28 @@ func (h *TrackingHandler) GetAllTracking(c *fiber.Ctx) error {
 	}
 
 	return response.Success(c, fiber.StatusOK, "tracking loaded successfully", items)
+}
+
+func (h *TrackingHandler) GetDashboard(c *fiber.Ctx) error {
+	trackings, err := h.usecase.GetDashboard(c.Context())
+	if err != nil {
+		return response.Fail(c, fiber.StatusInternalServerError, "failed to load dashboard tracking", err)
+	}
+
+	items := make([]dto.TrackingResponse, 0, len(trackings))
+	for _, tracking := range trackings {
+		items = append(items, dto.TrackingResponse{
+			ID:        tracking.ID,
+			BookingID: tracking.BookingID,
+			VehicleID: tracking.VehicleID,
+			DriverID:  tracking.DriverID,
+			Type:      tracking.Type,
+			Latitude:  tracking.Latitude,
+			Longitude: tracking.Longitude,
+			CreatedAt: tracking.CreatedAt,
+			UpdatedAt: tracking.UpdatedAt,
+		})
+	}
+
+	return response.Success(c, fiber.StatusOK, "tracking dashboard loaded successfully", items)
 }

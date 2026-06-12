@@ -15,6 +15,7 @@ type TrackingRepository interface {
 	GetLatestByBookingID(ctx context.Context, bookingID uint) (*entity.Tracking, error)
 	GetByBookingID(ctx context.Context, bookingID uint) ([]entity.Tracking, error)
 	GetAll(ctx context.Context) ([]entity.Tracking, error)
+	GetDashboard(ctx context.Context) ([]entity.Tracking, error)
 }
 
 type trackingRepository struct {
@@ -72,3 +73,16 @@ func (r *trackingRepository) GetAll(ctx context.Context) ([]entity.Tracking, err
 	err := r.db.WithContext(ctx).Order("updated_at DESC, id DESC").Find(&trackings).Error
 	return trackings, err
 }
+
+func (r *trackingRepository) GetDashboard(ctx context.Context) ([]entity.Tracking, error) {
+	// Query to fetch the latest tracking record for each active booking/trip.
+	var trackings []entity.Tracking
+	err := r.db.WithContext(ctx).
+		Select("DISTINCT ON (booking_id) *").
+		Order("booking_id, updated_at DESC").
+		Preload("Vehicle").
+		Preload("Driver").
+		Find(&trackings).Error
+	return trackings, err
+}
+

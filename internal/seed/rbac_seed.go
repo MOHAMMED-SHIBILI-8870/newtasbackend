@@ -16,6 +16,7 @@ func SeedRBAC() {
 		{Name: "guide", Description: "Trip guide"},
 		{Name: "driver", Description: "Trip driver"},
 		{Name: "support", Description: "Support staff"},
+		{Name: "supportagent", Description: "Support agent"},
 		{Name: "user", Description: "Standard customer"},
 	}
 
@@ -56,6 +57,7 @@ func SeedRBAC() {
 		"guide":   {"manage_bookings", "manage_tracking", "manage_chat","chat.read","chat.send"},
 		"driver":  {"manage_tracking","chat.read","chat.send"},
 		"support": {"manage_chat", "manage_complaints","chat.read","chat.send"},
+		"supportagent": {"manage_chat", "manage_complaints","chat.read","chat.send"},
 		"user":    {"chat.read","chat.send"},
 	}
 

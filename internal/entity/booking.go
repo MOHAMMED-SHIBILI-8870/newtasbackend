@@ -19,6 +19,9 @@ type Booking struct {
 	BookingType string `gorm:"type:varchar(20);default:'shared'" json:"booking_type"`
 	Status      string `gorm:"type:varchar(50);default:'pending'" json:"status"`
 
+	StartDate *time.Time `gorm:"type:date" json:"start_date,omitempty"`
+	EndDate   *time.Time `gorm:"type:date" json:"end_date,omitempty"`
+
 	SeatsBooked     int     `gorm:"not null;default:1" json:"seats_booked"`
 	CouponCode      string  `gorm:"type:varchar(100)" json:"coupon_code,omitempty"`
 	DiscountPercent float64 `gorm:"type:decimal(5,2);default:0" json:"discount_percent"`
@@ -77,5 +80,7 @@ type BookingResponse struct {
 	BaseAmount      float64       `json:"base_amount"`
 	FinalAmount     float64       `json:"final_amount"`
 	CreatedAt       time.Time     `json:"created_at"`
+	StartDate       *time.Time    `json:"start_date,omitempty"`
+	EndDate         *time.Time    `json:"end_date,omitempty"`
 	CustomPlans     []BookingPlan `json:"custom_plans"`
 }

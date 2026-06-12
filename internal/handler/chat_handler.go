@@ -2,7 +2,9 @@ package handler
 
 import (
 	"backend/internal/entity"
+	"backend/internal/middleware"
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/gofiber/contrib/websocket"
@@ -70,12 +72,35 @@ func (h *ChatHandler) RESTFetchHistory(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "user_id and guide_id are required"})
 	}
 
+	// Security: verify the authenticated caller is one of the chat participants
+	callerID := middleware.GetAuthUserID(c)
+	callerRole := middleware.GetAuthRole(c)
+	callerIDStr := fmt.Sprintf("%d", callerID)
+
+	if callerRole != "admin" && callerIDStr != userID && callerIDStr != guideID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "access denied"})
+	}
+
+	// Mark unread messages as read
+	_ = h.usecase.MarkMessagesAsRead(context.Background(), userID, guideID, callerIDStr)
+
 	messages, err := h.usecase.GetMessages(context.Background(), userID, guideID)
 	if err != nil {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	return c.JSON(fiber.Map{"messages": messages})
+	h.hub.mu.RLock()
+	partnerID := guideID
+	if callerIDStr == guideID {
+		partnerID = userID
+	}
+	_, isOnline := h.hub.clients[partnerID]
+	h.hub.mu.RUnlock()
+
+	return c.JSON(fiber.Map{
+		"messages": messages,
+		"is_online": isOnline,
+	})
 }
 
 // WebSocket connection handler
@@ -83,6 +108,29 @@ func (h *ChatHandler) WebSocketHandler(c *websocket.Conn) {
 	userID := c.Query("user_id")
 	if userID == "" {
 		_ = c.WriteJSON(fiber.Map{"error": "unauthorized connection target missing query param: user_id"})
+		c.Close()
+		return
+	}
+
+	// Security: verify the authenticated user matches the requested user_id.
+	// The auth middleware already ran before the WebSocket upgrade, so the
+	// authenticated user ID is available via c.Locals().
+	authID, _ := c.Locals("auth_user_id").(uint)
+	if authID == 0 {
+		// Try other possible types that may have been stored
+		switch v := c.Locals("auth_user_id").(type) {
+		case int:
+			authID = uint(v)
+		case int64:
+			authID = uint(v)
+		case float64:
+			authID = uint(v)
+		}
+	}
+
+	expectedID := fmt.Sprintf("%d", authID)
+	if authID == 0 || expectedID != userID {
+		_ = c.WriteJSON(fiber.Map{"error": "access denied: user_id does not match authenticated identity"})
 		c.Close()
 		return
 	}

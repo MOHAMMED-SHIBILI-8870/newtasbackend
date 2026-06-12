@@ -7,6 +7,7 @@ import (
 	"backend/internal/usecase"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -36,7 +37,7 @@ func bookingErrorStatus(err error) int {
 		if strings.Contains(msg, "required") || strings.Contains(msg, "invalid") {
 			return fiber.StatusBadRequest
 		}
-		return fiber.StatusUnprocessableEntity
+		return fiber.StatusInternalServerError
 	}
 }
 
@@ -44,6 +45,8 @@ type bookingInput struct {
 	Seats       int    `json:"seats"`
 	CouponCode  string `json:"coupon_code"`
 	BookingType string `json:"booking_type"`
+	StartDate   string `json:"start_date"`
+	EndDate     string `json:"end_date"`
 }
 
 func (h *BookingHandler) BookTrip(c *fiber.Ctx) error {
@@ -64,7 +67,23 @@ func (h *BookingHandler) BookTrip(c *fiber.Ctx) error {
 		return response.Fail(c, fiber.StatusUnauthorized, "unauthorized", nil)
 	}
 
-	booking, err := h.usecase.BookTrip(c.Context(), uint(tripID), userID, input.Seats, input.CouponCode)
+	var startDate, endDate *time.Time
+	if input.StartDate != "" {
+		if t, err := time.Parse(time.RFC3339, input.StartDate); err == nil {
+			startDate = &t
+		} else if t, err := time.Parse("2006-01-02", input.StartDate); err == nil {
+			startDate = &t
+		}
+	}
+	if input.EndDate != "" {
+		if t, err := time.Parse(time.RFC3339, input.EndDate); err == nil {
+			endDate = &t
+		} else if t, err := time.Parse("2006-01-02", input.EndDate); err == nil {
+			endDate = &t
+		}
+	}
+
+	booking, err := h.usecase.BookTrip(c.Context(), uint(tripID), userID, input.Seats, input.CouponCode, startDate, endDate)
 	if err != nil {
 		return response.Fail(c, bookingErrorStatus(err), "failed to create booking", err)
 	}
@@ -90,7 +109,23 @@ func (h *BookingHandler) BookSlot(c *fiber.Ctx) error {
 		return response.Fail(c, fiber.StatusUnauthorized, "unauthorized", nil)
 	}
 
-	booking, err := h.usecase.BookSlot(c.Context(), uint(slotID), userID, input.Seats, input.CouponCode, input.BookingType)
+	var startDate, endDate *time.Time
+	if input.StartDate != "" {
+		if t, err := time.Parse(time.RFC3339, input.StartDate); err == nil {
+			startDate = &t
+		} else if t, err := time.Parse("2006-01-02", input.StartDate); err == nil {
+			startDate = &t
+		}
+	}
+	if input.EndDate != "" {
+		if t, err := time.Parse(time.RFC3339, input.EndDate); err == nil {
+			endDate = &t
+		} else if t, err := time.Parse("2006-01-02", input.EndDate); err == nil {
+			endDate = &t
+		}
+	}
+
+	booking, err := h.usecase.BookSlot(c.Context(), uint(slotID), userID, input.Seats, input.CouponCode, input.BookingType, startDate, endDate)
 	if err != nil {
 		return response.Fail(c, bookingErrorStatus(err), "failed to create booking", err)
 	}
@@ -109,8 +144,14 @@ func (h *BookingHandler) GetBookingByID(c *fiber.Ctx) error {
 		)
 	}
 
-	// Calls the clean usecase layer wrapper
-	booking, err := h.usecase.GetBookingByID(c.Context(), uint(bookingID))
+	userID := middleware.GetAuthUserID(c)
+	role := middleware.GetAuthRole(c)
+	if userID == 0 {
+		return response.Fail(c, fiber.StatusUnauthorized, "unauthorized", nil)
+	}
+
+	// Calls the clean usecase layer wrapper with ownership validation
+	booking, err := h.usecase.GetBookingByID(c.Context(), uint(bookingID), userID, role)
 	if err != nil {
 		return response.Fail(
 			c, 

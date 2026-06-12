@@ -34,7 +34,7 @@ func NewReviewUsecase(
 	}
 }
 
-func (u *ReviewUsecase) CreateReview(ctx context.Context, userID uint, tripID uint, rating int, comment string) (*entity.Review, error) {
+func (u *ReviewUsecase) CreateReview(ctx context.Context, userID uint, tripID uint, guideID *uint, rating int, comment string) (*entity.Review, error) {
 	if userID == 0 {
 		return nil, errors.New("user id is required")
 	}
@@ -52,6 +52,7 @@ func (u *ReviewUsecase) CreateReview(ctx context.Context, userID uint, tripID ui
 	review := &entity.Review{
 		UserID:  userID,
 		TripID:  tripID,
+		GuideID: guideID,
 		Rating:  rating,
 		Comment: strings.TrimSpace(comment),
 	}

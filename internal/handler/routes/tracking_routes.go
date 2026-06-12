@@ -14,4 +14,5 @@ func TrackingRoutes(app fiber.Router, h *handler.TrackingHandler, auth fiber.Han
 
 	adminTracking := app.Group("/admin/tracking", auth)
 	adminTracking.Get("/", permission("manage_tracking"), h.GetAllTracking)
+	adminTracking.Get("/dashboard", permission("manage_tracking"), h.GetDashboard)
 }

@@ -44,6 +44,7 @@ func mapVehicleResponse(vehicle entity.Vehicle) dto.VehicleResponse {
 	return dto.VehicleResponse{
 		ID:             vehicle.ID,
 		AgencyID:       vehicle.AgencyID,
+		DriverID:       vehicle.DriverID,
 		Name:           vehicle.Name,
 		Type:           vehicle.Type,
 		TotalSeats:     vehicle.TotalSeats,
@@ -198,3 +199,24 @@ func (h *VehicleHandler) AssignVehicleToTrip(c *fiber.Ctx) error {
 
 	return response.Success(c, fiber.StatusOK, "vehicle assigned successfully", nil)
 }
+
+func (h *VehicleHandler) AssignDriverToVehicle(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return response.Fail(c, fiber.StatusBadRequest, "invalid vehicle id", err)
+	}
+
+	var input dto.AssignDriverRequest
+	if err := c.BodyParser(&input); err != nil {
+		return response.Fail(c, fiber.StatusBadRequest, "invalid request body", err)
+	}
+
+	userID := middleware.GetAuthUserID(c)
+	role := middleware.GetAuthRole(c)
+	if err := h.usecase.AssignDriverToVehicle(c.Context(), userID, role, uint(id), input.DriverID); err != nil {
+		return response.Fail(c, vehicleStatusFromErr(err), "failed to assign driver", err)
+	}
+
+	return response.Success(c, fiber.StatusOK, "driver assigned successfully", nil)
+}
+

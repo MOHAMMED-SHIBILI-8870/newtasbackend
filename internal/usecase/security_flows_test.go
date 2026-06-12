@@ -430,7 +430,7 @@ func TestBookTripRoundsMoneyAndCreatesAdminNotification(t *testing.T) {
 		notificationUsecase,
 	)
 
-	booking, err := bookingUsecase.BookTrip(context.Background(), trip.ID, user.ID, 2, offer.Code)
+	booking, err := bookingUsecase.BookTrip(context.Background(), trip.ID, user.ID, 2, offer.Code, nil, nil)
 	if err != nil {
 		t.Fatalf("book trip: %v", err)
 	}

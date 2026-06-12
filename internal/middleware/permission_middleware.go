@@ -8,7 +8,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-func PermissionMiddleware(permissionUsecase *usecase.PermissionUsecase) func(...string) fiber.Handler {
+func RequirePermission(permissionUsecase *usecase.PermissionUsecase) func(...string) fiber.Handler {
 	return func(requiredPermissions ...string) fiber.Handler {
 		return func(c *fiber.Ctx) error {
 			userID := GetAuthUserID(c)

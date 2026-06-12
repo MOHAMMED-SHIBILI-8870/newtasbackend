@@ -59,3 +59,10 @@ func (s *RazorpayService) VerifySignature(
 
 	return expected == signature
 }
+
+func (s *RazorpayService) RefundPayment(paymentID string, amount float64) (map[string]interface{}, error) {
+	data := map[string]interface{}{
+		"amount": int(amount * 100),
+	}
+	return s.client.Payment.Refund(paymentID, int(amount*100), data,nil)
+}

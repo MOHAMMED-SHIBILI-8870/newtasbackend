@@ -16,10 +16,14 @@ type VehicleRequest struct {
 type AssignVehicleRequest struct {
 	TripID uint `json:"trip_id"`
 }
+type AssignDriverRequest struct {
+	DriverID uint `json:"driver_id"`
+}
 
 type VehicleResponse struct {
 	ID             uint      `json:"id"`
 	AgencyID       uint      `json:"agency_id"`
+	DriverID       *uint     `json:"driver_id,omitempty"`
 	Name           string    `json:"name"`
 	Type           string    `json:"type"`
 	TotalSeats     int       `json:"total_seats"`

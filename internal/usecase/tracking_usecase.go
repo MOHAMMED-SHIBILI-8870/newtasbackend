@@ -62,7 +62,7 @@ func (u *TrackingUsecase) UpdateLocation(ctx context.Context, bookingID uint, ve
 
 	tracking := &entity.Tracking{
 		BookingID: bookingID,
-		VehicleID: vehicleID,
+		VehicleID: &vehicleID,
 		Latitude:  latitude,
 		Longitude: longitude,
 	}
@@ -136,4 +136,8 @@ func (u *TrackingUsecase) GetTrackingsForUser(ctx context.Context, userID uint, 
 
 func (u *TrackingUsecase) GetAll(ctx context.Context) ([]entity.Tracking, error) {
 	return u.trackingRepo.GetAll(ctx)
+}
+
+func (u *TrackingUsecase) GetDashboard(ctx context.Context) ([]entity.Tracking, error) {
+	return u.trackingRepo.GetDashboard(ctx)
 }

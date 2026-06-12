@@ -17,4 +17,5 @@ func VehicleRoutes(app fiber.Router, h *handler.VehicleHandler, auth fiber.Handl
 	adminVehicles.Put("/:id", permission("manage_fleet"), h.UpdateVehicle)
 	adminVehicles.Delete("/:id", permission("manage_fleet"), h.DeleteVehicle)
 	adminVehicles.Patch("/:id/assign-trip", permission("manage_fleet"), h.AssignVehicleToTrip)
+	adminVehicles.Patch("/:id/assign-driver", permission("manage_fleet"), h.AssignDriverToVehicle)
 }

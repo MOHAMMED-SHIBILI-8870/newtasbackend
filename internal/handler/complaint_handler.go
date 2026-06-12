@@ -44,6 +44,8 @@ func mapComplaintResponse(complaint entity.Complaint) dto.ComplaintResponse {
 		Title:       complaint.Title,
 		Description: complaint.Description,
 		Status:      complaint.Status,
+		AdminID:     complaint.AdminID,
+		AdminNotes:  complaint.AdminNotes,
 		CreatedAt:   complaint.CreatedAt,
 		UpdatedAt:   complaint.UpdatedAt,
 	}
@@ -123,7 +125,7 @@ func (h *ComplaintHandler) UpdateComplaintStatus(c *fiber.Ctx) error {
 		return response.Fail(c, fiber.StatusBadRequest, "invalid request body", err)
 	}
 
-	if err := h.usecase.UpdateComplaintStatus(c.Context(), uint(id), input.Status); err != nil {
+	if err := h.usecase.UpdateComplaintStatus(c.Context(), uint(id), input.Status, input.AdminID, input.AdminNotes); err != nil {
 		return response.Fail(c, complaintStatusFromErr(err), "failed to update complaint status", err)
 	}
 

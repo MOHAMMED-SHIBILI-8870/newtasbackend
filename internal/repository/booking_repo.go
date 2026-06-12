@@ -121,7 +121,7 @@ func (r *bookingRepository) HasOverlappingBooking(ctx context.Context, userID ui
 			"confirmed",
 		}).
 		Where(
-			"ts.start_date <= ? AND ts.end_date >= ?",
+			"COALESCE(bookings.start_date, ts.start_date) <= ? AND COALESCE(bookings.end_date, ts.end_date) >= ?",
 			endDate,
 			startDate,
 		).
@@ -147,7 +147,7 @@ func (r *bookingRepository) HasTripOverlap(ctx context.Context,userID uint,start
 			"pending_payment",
 		}).
 		Where(
-			"t.start_date <= ? AND t.end_date >= ?",
+			"COALESCE(bookings.start_date, t.start_date) <= ? AND COALESCE(bookings.end_date, t.end_date) >= ?",
 			endDate,
 			startDate,
 		).
