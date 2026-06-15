@@ -12,6 +12,7 @@ func ReviewRoutes(app fiber.Router, h *handler.ReviewHandler, auth fiber.Handler
 	reviews.Get("/me", h.ListMyReviews)
 	reviews.Get("/trip/:trip_id", h.ListTripReviews)
 	reviews.Get("/trip/:trip_id/summary", h.GetTripSummary)
+	reviews.Get("/assigned", h.ListAssignedReviews)
 
 	adminReviews := app.Group("/admin/reviews", auth)
 	adminReviews.Get("/", permission("manage_reviews"), h.ListAllReviews)

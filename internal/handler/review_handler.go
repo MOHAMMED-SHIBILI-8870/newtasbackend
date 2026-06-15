@@ -160,3 +160,20 @@ func (h *ReviewHandler) DeleteReview(c *fiber.Ctx) error {
 
 	return response.Success(c, fiber.StatusOK, "review deleted successfully", nil)
 }
+
+func (h *ReviewHandler) ListAssignedReviews(c *fiber.Ctx) error {
+	userID := middleware.GetAuthUserID(c)
+	role, _ := c.Locals(middleware.AuthRoleKey).(string)
+
+	reviews, err := h.usecase.ListAssignedReviews(c.Context(), userID, role)
+	if err != nil {
+		return response.Fail(c, reviewStatusFromErr(err), "failed to load assigned reviews", err)
+	}
+
+	items := make([]dto.ReviewResponse, 0, len(reviews))
+	for _, review := range reviews {
+		items = append(items, mapReviewResponse(review))
+	}
+
+	return response.Success(c, fiber.StatusOK, "assigned reviews loaded successfully", items)
+}

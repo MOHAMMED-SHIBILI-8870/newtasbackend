@@ -37,18 +37,28 @@ func complaintStatusFromErr(err error) int {
 }
 
 func mapComplaintResponse(complaint entity.Complaint) dto.ComplaintResponse {
-	return dto.ComplaintResponse{
+	resp := dto.ComplaintResponse{
 		ID:          complaint.ID,
 		UserID:      complaint.UserID,
 		BookingID:   complaint.BookingID,
 		Title:       complaint.Title,
 		Description: complaint.Description,
 		Status:      complaint.Status,
-		AdminID:     complaint.AdminID,
-		AdminNotes:  complaint.AdminNotes,
-		CreatedAt:   complaint.CreatedAt,
-		UpdatedAt:   complaint.UpdatedAt,
+		AdminID     : complaint.AdminID,
+		AdminNotes  : complaint.AdminNotes,
+		CreatedAt   : complaint.CreatedAt,
+		UpdatedAt   : complaint.UpdatedAt,
 	}
+
+	if complaint.User.ID != 0 {
+		resp.User = &dto.UserResponse{
+			ID:    complaint.User.ID,
+			Name:  complaint.User.FullName,
+			Email: complaint.User.Email,
+		}
+	}
+
+	return resp
 }
 
 func (h *ComplaintHandler) CreateComplaint(c *fiber.Ctx) error {

@@ -14,6 +14,7 @@ type ReviewRepository interface {
 	GetByID(ctx context.Context, id uint) (*entity.Review, error)
 	GetByTripID(ctx context.Context, tripID uint) ([]entity.Review, error)
 	GetByUserID(ctx context.Context, userID uint) ([]entity.Review, error)
+	GetByGuideID(ctx context.Context, guideID uint) ([]entity.Review, error)
 	GetAll(ctx context.Context) ([]entity.Review, error)
 }
 
@@ -61,6 +62,16 @@ func (r *reviewRepository) GetByUserID(ctx context.Context, userID uint) ([]enti
 	err := r.db.WithContext(ctx).
 		Preload("User").Preload("Trip").
 		Where("user_id = ?", userID).
+		Order("created_at DESC").
+		Find(&reviews).Error
+	return reviews, err
+}
+
+func (r *reviewRepository) GetByGuideID(ctx context.Context, guideID uint) ([]entity.Review, error) {
+	var reviews []entity.Review
+	err := r.db.WithContext(ctx).
+		Preload("User").Preload("Trip").
+		Where("guide_id = ?", guideID).
 		Order("created_at DESC").
 		Find(&reviews).Error
 	return reviews, err

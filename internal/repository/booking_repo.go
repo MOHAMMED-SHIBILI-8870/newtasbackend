@@ -47,6 +47,7 @@ func (r *bookingRepository) GetBookingsByUserID(ctx context.Context, userID uint
 	var bookings []entity.Booking
 
 	err := r.db.WithContext(ctx).
+		Preload("User").
 		Preload("Trip").
 		Preload("Slot").
 		Preload("Slot.Trip").
@@ -64,6 +65,7 @@ func (r *bookingRepository) GetBookingByID(ctx context.Context, id uint) (*entit
 	var booking entity.Booking
 
 	err := r.db.WithContext(ctx).
+		Preload("User").
 		Preload("Trip").
 		Preload("Slot").
 		Preload("Slot.Trip").
@@ -101,6 +103,7 @@ func (r *bookingRepository) GetAllOrders(ctx context.Context) ([]entity.Booking,
 	var bookings []entity.Booking
 
 	err := r.db.WithContext(ctx).
+		Preload("User").
 		Preload("Trip").
 		Preload("Slot").
 		Preload("Slot.Trip").

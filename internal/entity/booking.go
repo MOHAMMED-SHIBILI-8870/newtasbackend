@@ -11,6 +11,7 @@ type Booking struct {
 	UpdatedAt time.Time `json:"updated_at"`
 
 	UserID    uint  `gorm:"not null;index;uniqueIndex:idx_booking_user_slot" json:"user_id"`
+	User      User  `gorm:"foreignKey:UserID" json:"user,omitempty"`
 	TripID    uint  `gorm:"not null;index" json:"trip_id"`
 	SlotID    *uint `gorm:"index;uniqueIndex:idx_booking_user_slot" json:"slot_id,omitempty"`
 	VehicleID *uint `gorm:"index" json:"vehicle_id,omitempty"`
@@ -65,11 +66,19 @@ type UpdateBookingPlanInput struct {
 	Plans []BookingPlan `json:"plans"`
 }
 
+type UserResponse struct {
+	ID    uint   `json:"id"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
 type BookingResponse struct {
 	ID              uint          `json:"id"`
 	Status          string        `json:"status"`
 	UserID          uint          `json:"user_id"`
+	User            *UserResponse `json:"user,omitempty"`
 	TripID          uint          `json:"trip_id"`
+	Trip            *Trip         `json:"trip,omitempty"`
 	SlotID          *uint         `json:"slot_id,omitempty"`
 	VehicleID       *uint         `json:"vehicle_id,omitempty"`
 	OfferID         *uint         `json:"offer_id,omitempty"`
@@ -79,6 +88,8 @@ type BookingResponse struct {
 	DiscountPercent float64       `json:"discount_percent"`
 	BaseAmount      float64       `json:"base_amount"`
 	FinalAmount     float64       `json:"final_amount"`
+	BalanceAmount   float64       `json:"balance_amount"`
+	PaymentStatus   string        `json:"payment_status"`
 	CreatedAt       time.Time     `json:"created_at"`
 	StartDate       *time.Time    `json:"start_date,omitempty"`
 	EndDate         *time.Time    `json:"end_date,omitempty"`

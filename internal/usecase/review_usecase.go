@@ -135,8 +135,23 @@ func (u *ReviewUsecase) GetTripAverageRating(ctx context.Context, tripID uint) (
 }
 
 func (u *ReviewUsecase) DeleteReview(ctx context.Context, id uint) error {
-	if id == 0 {
-		return errors.New("review id is required")
+	_, err := u.reviewRepo.GetByID(ctx, id)
+	if err != nil {
+		return errors.New("review not found")
 	}
+
 	return u.reviewRepo.Delete(ctx, id)
+}
+
+func (u *ReviewUsecase) ListAssignedReviews(ctx context.Context, userID uint, role string) ([]entity.Review, error) {
+	if role == "guide" {
+		var guide entity.Guide
+		if err := u.db.WithContext(ctx).Where("user_id = ?", userID).First(&guide).Error; err != nil {
+			return nil, errors.New("guide not found for user")
+		}
+		return u.reviewRepo.GetByGuideID(ctx, guide.ID)
+	}
+
+	// For admin and supportagent, return all reviews. Route handlers/middleware should enforce access.
+	return u.reviewRepo.GetAll(ctx)
 }

@@ -41,6 +41,39 @@ func bookingErrorStatus(err error) int {
 	}
 }
 
+func mapBookingResponse(b entity.Booking) entity.BookingResponse {
+	resp := entity.BookingResponse{
+		ID:              b.ID,
+		Status:          b.Status,
+		UserID:          b.UserID,
+		TripID:          b.TripID,
+		Trip:            &b.Trip,
+		SlotID:          b.SlotID,
+		VehicleID:       b.VehicleID,
+		OfferID:         b.OfferID,
+		BookingType:     b.BookingType,
+		SeatsBooked:     b.SeatsBooked,
+		CouponCode:      b.CouponCode,
+		DiscountPercent: b.DiscountPercent,
+		BaseAmount:      b.BaseAmount,
+		FinalAmount:     b.FinalAmount,
+		BalanceAmount:   b.BalanceAmount,
+		PaymentStatus:   b.PaymentStatus,
+		CreatedAt:       b.CreatedAt,
+		StartDate:       b.StartDate,
+		EndDate:         b.EndDate,
+		CustomPlans:     b.CustomPlans,
+	}
+	if b.User.ID != 0 {
+		resp.User = &entity.UserResponse{
+			ID:    b.User.ID,
+			Name:  b.User.FullName,
+			Email: b.User.Email,
+		}
+	}
+	return resp
+}
+
 type bookingInput struct {
 	Seats       int    `json:"seats"`
 	CouponCode  string `json:"coupon_code"`
@@ -88,7 +121,9 @@ func (h *BookingHandler) BookTrip(c *fiber.Ctx) error {
 		return response.Fail(c, bookingErrorStatus(err), "failed to create booking", err)
 	}
 
-	return response.Success(c, fiber.StatusCreated, "booking created successfully", booking)
+	resp := mapBookingResponse(*booking)
+
+	return response.Success(c, fiber.StatusCreated, "booking created successfully", resp)
 }
 
 func (h *BookingHandler) BookSlot(c *fiber.Ctx) error {
@@ -130,7 +165,9 @@ func (h *BookingHandler) BookSlot(c *fiber.Ctx) error {
 		return response.Fail(c, bookingErrorStatus(err), "failed to create booking", err)
 	}
 
-	return response.Success(c, fiber.StatusCreated, "booking created successfully", booking)
+	resp := mapBookingResponse(*booking)
+
+	return response.Success(c, fiber.StatusCreated, "booking created successfully", resp)
 }
 
 func (h *BookingHandler) GetBookingByID(c *fiber.Ctx) error {
@@ -161,11 +198,13 @@ func (h *BookingHandler) GetBookingByID(c *fiber.Ctx) error {
 		)
 	}
 
+	resp := mapBookingResponse(*booking)
+
 	return response.Success(
 		c, 
 		fiber.StatusOK, 
 		"booking details retrieved successfully", 
-		booking,
+		resp,
 	)
 }
 
@@ -180,7 +219,12 @@ func (h *BookingHandler) GetUserBookings(c *fiber.Ctx) error {
 		return response.Fail(c, fiber.StatusInternalServerError, "failed to load bookings", err)
 	}
 
-	return response.Success(c, fiber.StatusOK, "bookings loaded successfully", bookings)
+	var resp []entity.BookingResponse
+	for _, b := range bookings {
+		resp = append(resp, mapBookingResponse(b))
+	}
+
+	return response.Success(c, fiber.StatusOK, "bookings loaded successfully", resp)
 }
 
 func (h *BookingHandler) UpdateUserBookingPlans(c *fiber.Ctx) error {
@@ -212,5 +256,10 @@ func (h *BookingHandler) GetAllOrders(c *fiber.Ctx) error {
 		return response.Fail(c, fiber.StatusInternalServerError, "failed to load orders", err)
 	}
 
-	return response.Success(c, fiber.StatusOK, "orders loaded successfully", orders)
+	var resp []entity.BookingResponse
+	for _, b := range orders {
+		resp = append(resp, mapBookingResponse(b))
+	}
+
+	return response.Success(c, fiber.StatusOK, "orders loaded successfully", resp)
 }

@@ -23,6 +23,7 @@ const (
 	normalizedGuideRole   = "guide"
 	normalizedDriverRole  = "driver"
 	normalizedSupportRole = "support"
+	normalizedSupportAgentRole = "supportagent"
 	normalizedUserRole    = "user"
 )
 
@@ -44,6 +45,8 @@ func NormalizeRole(role string) string {
 		return normalizedDriverRole
 	case normalizedSupportRole:
 		return normalizedSupportRole
+	case normalizedSupportAgentRole:
+		return normalizedSupportAgentRole
 	case normalizedUserRole:
 		return normalizedUserRole
 	default:
@@ -53,7 +56,7 @@ func NormalizeRole(role string) string {
 
 func IsValidRole(role string) bool {
 	switch strings.ToLower(strings.TrimSpace(role)) {
-	case normalizedAdminRole, normalizedAgencyRole, normalizedGuideRole, normalizedDriverRole, normalizedSupportRole, normalizedUserRole:
+	case normalizedAdminRole, normalizedAgencyRole, normalizedGuideRole, normalizedDriverRole, normalizedSupportRole, normalizedSupportAgentRole, normalizedUserRole:
 		return true
 	default:
 		return false

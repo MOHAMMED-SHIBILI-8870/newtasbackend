@@ -39,7 +39,7 @@ func (r *complaintRepository) Delete(ctx context.Context, id uint) error {
 
 func (r *complaintRepository) GetByID(ctx context.Context, id uint) (*entity.Complaint, error) {
 	var complaint entity.Complaint
-	err := r.db.WithContext(ctx).First(&complaint, id).Error
+	err := r.db.WithContext(ctx).Preload("User").First(&complaint, id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -49,6 +49,7 @@ func (r *complaintRepository) GetByID(ctx context.Context, id uint) (*entity.Com
 func (r *complaintRepository) GetByUserID(ctx context.Context, userID uint) ([]entity.Complaint, error) {
 	var complaints []entity.Complaint
 	err := r.db.WithContext(ctx).
+		Preload("User").
 		Where("user_id = ?", userID).
 		Order("created_at DESC").
 		Find(&complaints).Error
@@ -58,6 +59,7 @@ func (r *complaintRepository) GetByUserID(ctx context.Context, userID uint) ([]e
 func (r *complaintRepository) GetByBookingID(ctx context.Context, bookingID uint) ([]entity.Complaint, error) {
 	var complaints []entity.Complaint
 	err := r.db.WithContext(ctx).
+		Preload("User").
 		Where("booking_id = ?", bookingID).
 		Order("created_at DESC").
 		Find(&complaints).Error
@@ -66,6 +68,6 @@ func (r *complaintRepository) GetByBookingID(ctx context.Context, bookingID uint
 
 func (r *complaintRepository) GetAll(ctx context.Context) ([]entity.Complaint, error) {
 	var complaints []entity.Complaint
-	err := r.db.WithContext(ctx).Order("created_at DESC").Find(&complaints).Error
+	err := r.db.WithContext(ctx).Preload("User").Order("created_at DESC").Find(&complaints).Error
 	return complaints, err
 }
