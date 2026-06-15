@@ -13,6 +13,7 @@ func VehicleRoutes(app fiber.Router, h *handler.VehicleHandler, auth fiber.Handl
 	vehicles.Get("/:id", h.GetVehicleByID)
 
 	adminVehicles := app.Group("/admin/vehicles", auth)
+	adminVehicles.Get("/", permission("manage_fleet"), h.ListVehicles)
 	adminVehicles.Post("/", permission("manage_fleet"), h.CreateVehicle)
 	adminVehicles.Put("/:id", permission("manage_fleet"), h.UpdateVehicle)
 	adminVehicles.Delete("/:id", permission("manage_fleet"), h.DeleteVehicle)
