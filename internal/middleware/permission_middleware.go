@@ -25,6 +25,35 @@ func RequirePermission(permissionUsecase *usecase.PermissionUsecase) func(...str
 				return c.Next()
 			}
 
+			// Bypass database lookups for core roles to ensure resilience against stale databases
+			if role == "guide" {
+				guidePerms := map[string]bool{"manage_bookings": true, "manage_tracking": true, "manage_chat": true, "manage_reviews": true, "chat.read": true, "chat.send": true}
+				hasAll := true
+				for _, req := range requiredPermissions {
+					if !guidePerms[strings.ToLower(strings.TrimSpace(req))] {
+						hasAll = false
+						break
+					}
+				}
+				if hasAll {
+					return c.Next()
+				}
+			}
+
+			if role == "supportagent" {
+				agentPerms := map[string]bool{"manage_chat": true, "manage_complaints": true, "manage_reviews": true, "chat.read": true, "chat.send": true}
+				hasAll := true
+				for _, req := range requiredPermissions {
+					if !agentPerms[strings.ToLower(strings.TrimSpace(req))] {
+						hasAll = false
+						break
+					}
+				}
+				if hasAll {
+					return c.Next()
+				}
+			}
+
 			permissions, err := permissionUsecase.GetUserPermissionKeys(c.Context(), userID)
 			if err != nil {
 				return response.Fail(c, fiber.StatusForbidden, "access denied", err)

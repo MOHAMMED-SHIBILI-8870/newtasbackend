@@ -20,6 +20,10 @@ func extractToken(c *fiber.Ctx) (string, error) {
 		return token, nil
 	}
 
+	if token := c.Query("token"); token != "" {
+		return token, nil
+	}
+
 	return "", fiber.NewError(fiber.StatusUnauthorized, "missing authorization token")
 }
 

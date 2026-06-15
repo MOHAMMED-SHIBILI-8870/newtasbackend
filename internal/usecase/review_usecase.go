@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -67,18 +66,16 @@ func (u *ReviewUsecase) CreateReview(ctx context.Context, userID uint, tripID ui
 			}
 			return err
 		}
-		if time.Now().Before(trip.EndDate) {
-			return errors.New("trip has not been completed yet")
-		}
 
-		var bookingCount int64
+		var booking entity.Booking
 		if err := tx.Model(&entity.Booking{}).
 			Where("user_id = ? AND trip_id = ? AND status <> ?", userID, tripID, "cancelled").
-			Count(&bookingCount).Error; err != nil {
+			Order("end_date DESC").
+			First(&booking).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("you can only review trips that you have booked")
+			}
 			return err
-		}
-		if bookingCount == 0 {
-			return errors.New("booking not found for this trip")
 		}
 
 		var existing entity.Review

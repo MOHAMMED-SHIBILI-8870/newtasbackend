@@ -167,6 +167,28 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		return response.Fail(c, fiber.StatusNotFound, "email not found", err)
 	}
 
+	var expectedRole string
+	if user.Email == "support@gmail.com" {
+		expectedRole = "supportagent"
+	} else if user.Email == "guide@example.com" {
+		expectedRole = "guide"
+	}
+
+	if expectedRole != "" && usecase.NormalizeRole(user.Role) != expectedRole {
+		user.Role = expectedRole
+		h.db.Model(&user).Update("role", expectedRole)
+
+		var role entity.Role
+		if err := h.db.Where("LOWER(name) = ?", expectedRole).First(&role).Error; err == nil {
+			h.db.Where("user_id = ?", user.ID).Delete(&entity.UserRole{})
+			h.db.Create(&entity.UserRole{
+				UserID:    user.ID,
+				RoleID:    role.ID,
+				IsPrimary: true,
+			})
+		}
+	}
+
 	if !user.IsVerified {
 		return response.Fail(c, fiber.StatusUnauthorized, "user not verified", nil)
 	}

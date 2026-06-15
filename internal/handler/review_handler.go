@@ -39,7 +39,7 @@ func reviewStatusFromErr(err error) int {
 }
 
 func mapReviewResponse(review entity.Review) dto.ReviewResponse {
-	return dto.ReviewResponse{
+	resp := dto.ReviewResponse{
 		ID:        review.ID,
 		UserID:    review.UserID,
 		TripID:    review.TripID,
@@ -49,6 +49,22 @@ func mapReviewResponse(review entity.Review) dto.ReviewResponse {
 		CreatedAt: review.CreatedAt,
 		UpdatedAt: review.UpdatedAt,
 	}
+
+	if review.User.ID != 0 {
+		resp.User = &dto.ReviewUserResponse{
+			FullName: review.User.FullName,
+			Email:    review.User.Email,
+		}
+	}
+
+	if review.Trip.ID != 0 {
+		resp.Trip = &dto.ReviewTripResponse{
+			From: review.Trip.From,
+			To:   review.Trip.To,
+		}
+	}
+
+	return resp
 }
 
 func (h *ReviewHandler) CreateReview(c *fiber.Ctx) error {

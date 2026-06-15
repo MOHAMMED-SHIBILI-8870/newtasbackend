@@ -49,6 +49,7 @@ func (r *reviewRepository) GetByID(ctx context.Context, id uint) (*entity.Review
 func (r *reviewRepository) GetByTripID(ctx context.Context, tripID uint) ([]entity.Review, error) {
 	var reviews []entity.Review
 	err := r.db.WithContext(ctx).
+		Preload("User").Preload("Trip").
 		Where("trip_id = ?", tripID).
 		Order("created_at DESC").
 		Find(&reviews).Error
@@ -58,6 +59,7 @@ func (r *reviewRepository) GetByTripID(ctx context.Context, tripID uint) ([]enti
 func (r *reviewRepository) GetByUserID(ctx context.Context, userID uint) ([]entity.Review, error) {
 	var reviews []entity.Review
 	err := r.db.WithContext(ctx).
+		Preload("User").Preload("Trip").
 		Where("user_id = ?", userID).
 		Order("created_at DESC").
 		Find(&reviews).Error
@@ -66,6 +68,9 @@ func (r *reviewRepository) GetByUserID(ctx context.Context, userID uint) ([]enti
 
 func (r *reviewRepository) GetAll(ctx context.Context) ([]entity.Review, error) {
 	var reviews []entity.Review
-	err := r.db.WithContext(ctx).Order("created_at DESC").Find(&reviews).Error
+	err := r.db.WithContext(ctx).
+		Preload("User").Preload("Trip").
+		Order("created_at DESC").
+		Find(&reviews).Error
 	return reviews, err
 }

@@ -28,11 +28,21 @@ func SeedUsers() {
 			Role:       "guide",
 			IsVerified: true,
 		},
+		{
+			FullName:   "Customer Support",
+			Email:      "support@gmail.com",
+			Role:       "supportagent",
+			IsVerified: true,
+		},
 	}
 
 	for _, u := range users {
 		var existing entity.User
 		if err := db.Where("email = ?", u.Email).First(&existing).Error; err == nil {
+			// Update the role to ensure it matches the seed
+			if existing.Role != u.Role {
+				db.Model(&existing).Update("role", u.Role)
+			}
 			continue // already exists
 		}
 

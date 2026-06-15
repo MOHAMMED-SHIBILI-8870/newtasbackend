@@ -22,6 +22,7 @@ func Migrations() error {
 		&entity.ChatRoom{},
 		&entity.Message{},
 		&entity.Verification{},
+		&entity.TripPricingTier{},
 	); err != nil {
 		return err
 	}

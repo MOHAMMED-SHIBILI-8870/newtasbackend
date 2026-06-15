@@ -18,6 +18,8 @@ type BookingRepository interface {
 	GetAllOrders(ctx context.Context) ([]entity.Booking, error)
 	HasOverlappingBooking(ctx context.Context, userID uint, startDate time.Time, endDate time.Time) (bool, error)
 	HasTripOverlap(ctx context.Context,userID uint,startDate time.Time,endDate time.Time) (bool, error)
+	CountConcurrentBookings(ctx context.Context, tripID uint, startDate time.Time, endDate time.Time) (int64, error)
+	GetNextAvailableDate(ctx context.Context, tripID uint, startDate time.Time, endDate time.Time) (*time.Time, error)
 }
 
 type bookingRepository struct {
@@ -155,4 +157,43 @@ func (r *bookingRepository) HasTripOverlap(ctx context.Context,userID uint,start
 		Error
 
 	return count > 0, err
+}
+
+func (r *bookingRepository) CountConcurrentBookings(ctx context.Context, tripID uint, startDate time.Time, endDate time.Time) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).
+		Model(&entity.Booking{}).
+		Where("trip_id = ?", tripID).
+		Where("status IN ?", []string{"confirmed", "pending_payment"}).
+		Where("start_date <= ? AND end_date >= ?", endDate, startDate).
+		Count(&count).
+		Error
+	return count, err
+}
+
+func (r *bookingRepository) GetNextAvailableDate(ctx context.Context, tripID uint, startDate time.Time, endDate time.Time) (*time.Time, error) {
+	var bookings []entity.Booking
+	err := r.db.WithContext(ctx).
+		Model(&entity.Booking{}).
+		Where("trip_id = ?", tripID).
+		Where("status IN ?", []string{"confirmed", "pending_payment"}).
+		Where("start_date <= ? AND end_date >= ?", endDate, startDate).
+		Order("end_date ASC").
+		Find(&bookings).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	if len(bookings) > 0 {
+		for _, b := range bookings {
+			if b.EndDate != nil {
+				nextDate := b.EndDate.AddDate(0, 0, 2)
+				return &nextDate, nil
+			}
+		}
+	}
+	
+	nextDate := endDate.AddDate(0, 0, 2)
+	return &nextDate, nil
 }

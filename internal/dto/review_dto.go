@@ -18,7 +18,21 @@ type ReviewResponse struct {
 	Comment   string    `json:"comment,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+
+	User *ReviewUserResponse `json:"user,omitempty"`
+	Trip *ReviewTripResponse `json:"trip,omitempty"`
 }
+
+type ReviewUserResponse struct {
+	FullName string `json:"full_name"`
+	Email    string `json:"email"`
+}
+
+type ReviewTripResponse struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
 
 type ReviewSummaryResponse struct {
 	TripID        uint    `json:"trip_id"`

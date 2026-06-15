@@ -77,7 +77,7 @@ func (h *ChatHandler) RESTFetchHistory(c *fiber.Ctx) error {
 	callerRole := middleware.GetAuthRole(c)
 	callerIDStr := fmt.Sprintf("%d", callerID)
 
-	if callerRole != "admin" && callerIDStr != userID && callerIDStr != guideID {
+	if callerRole != "admin" && callerRole != "supportagent" && callerIDStr != userID && callerIDStr != guideID {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "access denied"})
 	}
 
@@ -101,6 +101,28 @@ func (h *ChatHandler) RESTFetchHistory(c *fiber.Ctx) error {
 		"messages": messages,
 		"is_online": isOnline,
 	})
+}
+
+// REST Fallback: Fetch Chat Contacts
+func (h *ChatHandler) RESTGetContacts(c *fiber.Ctx) error {
+	callerID := middleware.GetAuthUserID(c)
+	callerIDStr := fmt.Sprintf("%d", callerID)
+
+	contacts, err := h.usecase.GetContacts(context.Background(), callerIDStr)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to get contacts"})
+	}
+
+	return c.JSON(fiber.Map{"contacts": contacts})
+}
+
+// REST Fallback: Fetch Support Agent ID
+func (h *ChatHandler) RESTGetSupportAgent(c *fiber.Ctx) error {
+	id, err := h.usecase.GetSupportAgentID(context.Background())
+	if err != nil {
+		id = "4" // fallback
+	}
+	return c.JSON(fiber.Map{"id": id})
 }
 
 // WebSocket connection handler
@@ -129,7 +151,11 @@ func (h *ChatHandler) WebSocketHandler(c *websocket.Conn) {
 	}
 
 	expectedID := fmt.Sprintf("%d", authID)
-	if authID == 0 || expectedID != userID {
+	
+	role, _ := c.Locals("auth_role").(string)
+	isSupportBypass := userID == "support" && (role == "admin" || role == "supportagent")
+
+	if authID == 0 || (expectedID != userID && !isSupportBypass) {
 		_ = c.WriteJSON(fiber.Map{"error": "access denied: user_id does not match authenticated identity"})
 		c.Close()
 		return

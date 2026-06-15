@@ -22,6 +22,15 @@ func (u *chatUsecase) SendMessage(ctx context.Context, senderID, receiverID, con
 		return nil, errors.New("message content cannot be empty")
 	}
 
+	if receiverID == "support" {
+		if u.userRepo != nil {
+			supportUser, err := u.userRepo.GetByEmail(ctx, "support@gmail.com")
+			if err == nil && supportUser != nil {
+				receiverID = strconv.Itoa(int(supportUser.ID))
+			}
+		}
+	}
+
 	// 1. Validate explicit 1-to-1 access permission rules
 	hasAccess, err := u.repo.ValidatePermission(ctx, senderID, receiverID)
 	if err != nil || !hasAccess {
@@ -104,6 +113,13 @@ func (u *chatUsecase) SendMessage(ctx context.Context, senderID, receiverID, con
 }
 
 func (u *chatUsecase) GetMessages(ctx context.Context, userID, guideID string) ([]entity.Message, error) {
+	if guideID == "support" {
+		supportAgentID, err := u.GetSupportAgentID(ctx)
+		if err == nil {
+			guideID = supportAgentID
+		}
+	}
+
 	// Validate authorization rule
 	hasAccess, err := u.repo.ValidatePermission(ctx, userID, guideID)
 	if err != nil || !hasAccess {
@@ -122,9 +138,56 @@ func (u *chatUsecase) GetMessages(ctx context.Context, userID, guideID string) (
 }
 
 func (u *chatUsecase) MarkMessagesAsRead(ctx context.Context, userID, guideID, readerID string) error {
+	if guideID == "support" {
+		supportAgentID, err := u.GetSupportAgentID(ctx)
+		if err == nil {
+			guideID = supportAgentID
+		}
+	}
+
 	room, err := u.repo.GetRoom(ctx, userID, guideID)
 	if err != nil {
 		return err
 	}
 	return u.repo.MarkMessagesAsRead(ctx, room.ID, readerID)
+}
+
+func (u *chatUsecase) GetContacts(ctx context.Context, userID string) ([]string, error) {
+	rooms, err := u.repo.GetRoomsForUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	contactSet := make(map[string]bool)
+	for _, room := range rooms {
+		if room.UserID != "" && room.UserID != userID {
+			contactSet[room.UserID] = true
+		}
+		if room.GuideID != "" && room.GuideID != userID {
+			contactSet[room.GuideID] = true
+		}
+		if room.SupportAgentID != "" && room.SupportAgentID != userID {
+			contactSet[room.SupportAgentID] = true
+		}
+		if room.AdminID != "" && room.AdminID != userID {
+			contactSet[room.AdminID] = true
+		}
+	}
+
+	contacts := make([]string, 0, len(contactSet))
+	for contactID := range contactSet {
+		contacts = append(contacts, contactID)
+	}
+
+	return contacts, nil
+}
+
+func (u *chatUsecase) GetSupportAgentID(ctx context.Context) (string, error) {
+	if u.userRepo != nil {
+		supportUser, err := u.userRepo.GetByEmail(ctx, "support@gmail.com")
+		if err == nil && supportUser != nil {
+			return strconv.Itoa(int(supportUser.ID)), nil
+		}
+	}
+	return "4", nil // Fallback to seeded ID 4
 }

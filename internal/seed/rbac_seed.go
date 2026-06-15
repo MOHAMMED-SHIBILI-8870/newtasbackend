@@ -54,10 +54,10 @@ func SeedRBAC() {
 	assignments := map[string][]string{
 		"admin":   {"manage_users", "manage_bookings", "manage_tracking", "manage_chat", "manage_offers", "manage_fleet", "manage_reviews", "manage_complaints","chat.read","chat.send","chat.delete"},
 		"agency":  {"manage_bookings", "manage_offers", "manage_fleet","chat.read","chat.send"},
-		"guide":   {"manage_bookings", "manage_tracking", "manage_chat","chat.read","chat.send"},
+		"guide":   {"manage_bookings", "manage_tracking", "manage_chat", "manage_reviews", "chat.read","chat.send"},
 		"driver":  {"manage_tracking","chat.read","chat.send"},
 		"support": {"manage_chat", "manage_complaints","chat.read","chat.send"},
-		"supportagent": {"manage_chat", "manage_complaints","chat.read","chat.send"},
+		"supportagent": {"manage_chat", "manage_complaints", "manage_reviews", "chat.read","chat.send"},
 		"user":    {"chat.read","chat.send"},
 	}
 

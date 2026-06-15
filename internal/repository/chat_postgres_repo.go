@@ -82,3 +82,11 @@ func (r *PostgresChatRepository) MarkMessagesAsRead(ctx context.Context, roomID 
 		Where("room_id = ? AND receiver_id = ? AND is_read = ?", roomID, readerID, false).
 		Update("is_read", true).Error
 }
+
+func (r *PostgresChatRepository) GetRoomsForUser(ctx context.Context, userID string) ([]entity.ChatRoom, error) {
+	var rooms []entity.ChatRoom
+	err := r.db.WithContext(ctx).
+		Where(`user_id = ? OR guide_id = ? OR support_agent_id = ? OR admin_id = ?`, userID, userID, userID, userID).
+		Find(&rooms).Error
+	return rooms, err
+}

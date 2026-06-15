@@ -109,10 +109,26 @@ func (u *TripUsecase) UpdateTrip(ctx context.Context, id uint, input entity.Upda
 	if input.Children != nil {
 		existing.Children = *input.Children
 	}
+	if input.MinDuration != nil {
+		existing.MinDuration = *input.MinDuration
+	}
+	if input.ConcurrentSlots != nil {
+		existing.ConcurrentSlots = *input.ConcurrentSlots
+	}
+	if input.GroupDiscountThreshold != nil {
+		existing.GroupDiscountThreshold = *input.GroupDiscountThreshold
+	}
+	if input.GroupDiscountPercent != nil {
+		existing.GroupDiscountPercent = *input.GroupDiscountPercent
+	}
 
 	// Override specific timeline structures directly if updated
 	if input.Plans != nil {
 		existing.Plans = input.Plans
+	}
+
+	if input.PricingTiers != nil {
+		existing.PricingTiers = input.PricingTiers
 	}
 
 	return u.repo.Update(ctx, existing)

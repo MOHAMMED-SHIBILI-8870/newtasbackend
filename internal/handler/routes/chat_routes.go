@@ -12,5 +12,7 @@ func MapChatRoutes(app *fiber.App, chatHandler *handler.ChatHandler, authMiddlew
 
 	api.Post("/message", chatHandler.RESTSendMessage)
 	api.Get("/history", chatHandler.RESTFetchHistory)
+	api.Get("/contacts", chatHandler.RESTGetContacts)
+	api.Get("/support-agent", chatHandler.RESTGetSupportAgent)
 	api.Get("/ws", websocket.New(chatHandler.WebSocketHandler))
 }

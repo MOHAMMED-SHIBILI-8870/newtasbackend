@@ -105,6 +105,28 @@ func (u *BookingUsecase) BookTrip(
 		)
 	}
 
+	chosenDuration := int(checkEnd.Sub(checkStart).Hours()/24) + 1
+	if trip.MinDuration > 0 && chosenDuration < trip.MinDuration {
+		return nil, errors.New("chosen duration is less than the minimum required for this trip")
+	}
+	if trip.Duration > 0 && chosenDuration > trip.Duration {
+		return nil, errors.New("chosen duration exceeds the maximum allowed for this trip")
+	}
+
+	if trip.ConcurrentSlots > 0 {
+		concurrentCount, err := u.bookingRepo.CountConcurrentBookings(ctx, tripID, checkStart, checkEnd)
+		if err != nil {
+			return nil, err
+		}
+		if concurrentCount >= int64(trip.ConcurrentSlots) {
+			nextDate, _ := u.bookingRepo.GetNextAvailableDate(ctx, tripID, checkStart, checkEnd)
+			if nextDate != nil {
+				return nil, errors.New("Please select another day because the slot is already booked. You can choose after this day: " + nextDate.Format("02/01/2006"))
+			}
+			return nil, errors.New("Please select another day because the slot is already booked")
+		}
+	}
+
 	var offer *entity.Offer
 	if strings.TrimSpace(couponCode) != "" && u.offerRepo != nil {
 		offer, err = u.offerRepo.GetByCode(ctx, couponCode)
@@ -159,7 +181,21 @@ func (u *BookingUsecase) BookTrip(
 
 		// All monetary math is rounded through minor units so float inputs do not
 		// accumulate fractional-cent drift across booking and reporting flows.
-		baseAmountMinor := moneyToMinorUnits(trip.Price) * int64(seats)
+		var baseAmountMinor int64
+		tierFound := false
+		if len(trip.PricingTiers) > 0 {
+			for _, tier := range trip.PricingTiers {
+				if tier.Members == seats {
+					baseAmountMinor = moneyToMinorUnits(tier.Price)
+					tierFound = true
+					break
+				}
+			}
+		}
+
+		if !tierFound {
+			baseAmountMinor = moneyToMinorUnits(trip.Price) * int64(seats)
+		}
 		baseAmount := moneyFromMinorUnits(baseAmountMinor)
 		discountPercent := 0.0
 		offerID := (*uint)(nil)
@@ -182,6 +218,17 @@ func (u *BookingUsecase) BookTrip(
 			// Increment offer usage
 			tx.Model(&entity.Offer{}).Where("id = ?", offer.ID).Update("current_usage", gorm.Expr("current_usage + ?", 1))
 		}
+
+		if trip.GroupDiscountThreshold > 0 && seats >= trip.GroupDiscountThreshold {
+			groupDiscountMinor := int64(math.Round(float64(baseAmountMinor) * trip.GroupDiscountPercent / 100))
+			finalAmountMinor -= groupDiscountMinor
+			discountPercent += trip.GroupDiscountPercent
+		}
+
+		if finalAmountMinor < 0 {
+			finalAmountMinor = 0
+		}
+		
 		finalAmount := moneyFromMinorUnits(finalAmountMinor)
 
 		advancePercent := 20.0
@@ -219,19 +266,21 @@ func (u *BookingUsecase) BookTrip(
 		}
 
 		for _, p := range trip.Plans {
-			booking.CustomPlans = append(
-				booking.CustomPlans,
-				entity.BookingPlan{
-					DayNumber:   p.DayNumber,
-					Title:       p.Title,
-					Description: p.Description,
-					Location:    p.Location,
-					StartTime:   p.StartTime,
-					EndTime:     p.EndTime,
-					Category:    p.Category,
-					Cost:        p.Cost,
-				},
-			)
+			if p.DayNumber <= chosenDuration {
+				booking.CustomPlans = append(
+					booking.CustomPlans,
+					entity.BookingPlan{
+						DayNumber:   p.DayNumber,
+						Title:       p.Title,
+						Description: p.Description,
+						Location:    p.Location,
+						StartTime:   p.StartTime,
+						EndTime:     p.EndTime,
+						Category:    p.Category,
+						Cost:        p.Cost,
+					},
+				)
+			}
 		}
 
 		if err := u.bookingRepo.CreateBookingTx(tx, booking); err != nil {

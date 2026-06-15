@@ -17,12 +17,16 @@ type Trip struct {
 	To          string    `gorm:"type:varchar(255);not null" json:"to"`
 	StartDate   time.Time `gorm:"default:CURRENT_TIMESTAMP" json:"start_date"`
 	EndDate     time.Time `gorm:"default:CURRENT_TIMESTAMP" json:"end_date"`
-	Duration    int       `gorm:"not null;default:1" json:"duration"`
-	TripType    string    `gorm:"type:varchar(100);default:'Family'" json:"trip_type"`
-	BudgetLevel string    `gorm:"type:varchar(50);default:'Medium'" json:"budget_level"`
-	Price       float64   `gorm:"type:decimal(10,2);default:0.00" json:"price"`
-	Members     int       `gorm:"default:1" json:"members"`
-	Children    int       `gorm:"default:0" json:"children"`
+	Duration                 int       `gorm:"not null;default:1" json:"duration"`
+	MinDuration              int       `gorm:"not null;default:1" json:"min_duration"`
+	TripType                 string    `gorm:"type:varchar(100);default:'Family'" json:"trip_type"`
+	BudgetLevel              string    `gorm:"type:varchar(50);default:'Medium'" json:"budget_level"`
+	Price                    float64   `gorm:"type:decimal(10,2);default:0.00" json:"price"`
+	Members                  int       `gorm:"default:1" json:"members"`
+	Children                 int       `gorm:"default:0" json:"children"`
+	ConcurrentSlots          int       `gorm:"default:1" json:"concurrent_slots"`
+	GroupDiscountThreshold   int       `gorm:"default:0" json:"group_discount_threshold"`
+	GroupDiscountPercent     float64   `gorm:"type:decimal(5,2);default:0.00" json:"group_discount_percent"`
 	HotelType   string    `gorm:"type:varchar(100);default:'3 Star'" json:"hotel_type"`
 	Transport   string    `gorm:"type:varchar(255);default:'Car'" json:"transport"` // Mixed transport allowed
 
@@ -32,5 +36,6 @@ type Trip struct {
 	Status       string `gorm:"type:varchar(50);default:'active'" json:"status"`
 
 	// --- Relationships ---
-	Plans []TripPlan `gorm:"foreignKey:TripID;constraint:OnDelete:CASCADE;" json:"plans,omitempty"`
+	Plans        []TripPlan        `gorm:"foreignKey:TripID;constraint:OnDelete:CASCADE;" json:"plans,omitempty"`
+	PricingTiers []TripPricingTier `gorm:"foreignKey:TripID;constraint:OnDelete:CASCADE;" json:"pricing_tiers,omitempty"`
 }

@@ -37,6 +37,7 @@ type ChatRepository interface {
 	GetMessagesByRoom(ctx context.Context, roomID string, limit int) ([]Message, error)
 	ValidatePermission(ctx context.Context, userID, guideID string) (bool, error)
 	MarkMessagesAsRead(ctx context.Context, roomID string, readerID string) error
+	GetRoomsForUser(ctx context.Context, userID string) ([]ChatRoom, error)
 }
 
 // Usecase interfaces
@@ -44,4 +45,6 @@ type ChatUsecase interface {
 	SendMessage(ctx context.Context, senderID, receiverID, content string) (*Message, error)
 	GetMessages(ctx context.Context, userID, guideID string) ([]Message, error)
 	MarkMessagesAsRead(ctx context.Context, userID, guideID, readerID string) error
+	GetContacts(ctx context.Context, userID string) ([]string, error)
+	GetSupportAgentID(ctx context.Context) (string, error)
 }
