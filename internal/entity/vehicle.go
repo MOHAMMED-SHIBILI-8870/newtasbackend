@@ -16,6 +16,6 @@ type Vehicle struct {
 	TripID         *uint     `gorm:"index;uniqueIndex:idx_vehicle_trip" json:"trip_id,omitempty"`
 	DriverID       *uint     `gorm:"index" json:"driver_id,omitempty"`
 	Agency         User      `gorm:"foreignKey:AgencyID;constraint:OnDelete:CASCADE;" json:"-"`
-	Driver         *User     `gorm:"foreignKey:DriverID;constraint:OnDelete:SET NULL;" json:"-"`
+	Driver         *Driver   `gorm:"foreignKey:DriverID;constraint:OnDelete:SET NULL;" json:"-"`
 	Trip           *Trip     `gorm:"foreignKey:TripID;constraint:OnDelete:SET NULL;" json:"-"`
 }

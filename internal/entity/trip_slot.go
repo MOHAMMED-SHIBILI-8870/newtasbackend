@@ -20,6 +20,7 @@ type TripSlot struct {
 	Status         string    `gorm:"size:30;not null;default:'scheduled';index" json:"status"`
 	Trip           Trip      `gorm:"foreignKey:TripID;constraint:OnDelete:CASCADE;" json:"trip"`
 	Vehicle        *Vehicle  `gorm:"foreignKey:VehicleID;constraint:OnDelete:SET NULL;" json:"vehicle,omitempty"`
+	Driver         *Driver   `gorm:"foreignKey:DriverID;constraint:OnDelete:SET NULL;" json:"driver,omitempty"`
 }
 
 // UpdateTripSlotInput supports partial admin updates.

@@ -92,6 +92,7 @@ func main() {
 	complaintRepo := repository.NewComplaintRepository(db)
 	trackingRepo := repository.NewTrackingRepository(db)
 	paymentRepo := repository.NewPaymentRepository(db)
+	driverRepo := repository.NewDriverRepository(db)
 	razorpayService := service.NewRazorpayService()
 	chatRepo := repository.NewPostgresChatRepository(config.DB)
 	supportRepo := repository.NewSupportRepository(db)
@@ -117,6 +118,7 @@ func main() {
 	supportUsecase := usecase.NewSupportUsecase(supportRepo)
 	analyticsUsecase := usecase.NewAnalyticsUsecase(db)
 	verificationUsecase := usecase.NewVerificationUsecase(verificationRepo)
+	driverUsecase := usecase.NewDriverUsecase(driverRepo, userRepo, roleRepo, vehicleRepo, bookingRepo, trackingRepo, db)
 
 	guideHandler := handler.NewGuideHandler(guideUsecase)
 	tripHandler := handler.NewTripHandler(tripUsecase)
@@ -139,6 +141,7 @@ func main() {
 	supportHandler := handler.NewSupportHandler(supportUsecase)
 	analyticsHandler := handler.NewAnalyticsHandler(analyticsUsecase)
 	verificationHandler := handler.NewVerificationHandler(verificationUsecase)
+	driverHandler := handler.NewDriverHandler(driverUsecase)
 
 	authMiddleware := middleware.AuthMiddleware(userRepo)
 	adminMiddleware := middleware.RoleMiddleware("admin")
@@ -164,6 +167,7 @@ func main() {
 	routes.SupportRoutes(app,supportHandler,authMiddleware)
 	routes.AnalyticsRoutes(app,analyticsHandler,authMiddleware,permissionMiddleware)
 	routes.VerificationRoutes(app,verificationHandler,authMiddleware)
+	routes.DriverRoutes(app, driverHandler, authMiddleware, permissionMiddleware)
 
 	port := config.GetEnv("PORT", "8997")
 	log.Printf("Server running on port %s", port)

@@ -34,6 +34,12 @@ func SeedUsers() {
 			Role:       "supportagent",
 			IsVerified: true,
 		},
+		{
+			FullName:   "Dhasappan",
+			Email:      "drive@gmail.com",
+			Role:       "driver",
+			IsVerified: true,
+		},
 	}
 
 	for _, u := range users {

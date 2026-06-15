@@ -33,6 +33,9 @@ func Migrations() error {
 	if err := PermissionMigration(); err != nil {
 		return err
 	}
+	if err := DriverMigration(); err != nil {
+		return err
+	}
 	if err := VehicleMigration(); err != nil {
 		return err
 	}

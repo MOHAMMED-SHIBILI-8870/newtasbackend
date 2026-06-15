@@ -16,6 +16,7 @@ type Booking struct {
 	SlotID    *uint `gorm:"index;uniqueIndex:idx_booking_user_slot" json:"slot_id,omitempty"`
 	VehicleID *uint `gorm:"index" json:"vehicle_id,omitempty"`
 	OfferID   *uint `gorm:"index" json:"offer_id,omitempty"`
+	DriverID  *uint `gorm:"index" json:"driver_id,omitempty"`
 
 	BookingType string `gorm:"type:varchar(20);default:'shared'" json:"booking_type"`
 	Status      string `gorm:"type:varchar(50);default:'pending'" json:"status"`
@@ -42,6 +43,7 @@ type Booking struct {
 	Slot    *TripSlot `gorm:"foreignKey:SlotID;constraint:OnDelete:SET NULL;" json:"slot,omitempty"`
 	Vehicle *Vehicle  `gorm:"foreignKey:VehicleID;constraint:OnDelete:SET NULL;" json:"vehicle,omitempty"`
 	Offer   *Offer    `gorm:"foreignKey:OfferID;constraint:OnDelete:SET NULL;" json:"offer,omitempty"`
+	Driver  *Driver   `gorm:"foreignKey:DriverID;constraint:OnDelete:SET NULL;" json:"driver,omitempty"`
 
 	CustomPlans []BookingPlan `gorm:"foreignKey:BookingID;constraint:OnDelete:CASCADE;" json:"custom_plans,omitempty"`
 	Payments    []Payment     `gorm:"foreignKey:BookingID" json:"payments,omitempty"`
@@ -82,6 +84,8 @@ type BookingResponse struct {
 	SlotID          *uint         `json:"slot_id,omitempty"`
 	VehicleID       *uint         `json:"vehicle_id,omitempty"`
 	OfferID         *uint         `json:"offer_id,omitempty"`
+	DriverID        *uint         `json:"driver_id,omitempty"`
+	Driver          *Driver       `json:"driver,omitempty"`
 	BookingType     string        `json:"booking_type"`
 	SeatsBooked     int           `json:"seats_booked"`
 	CouponCode      string        `json:"coupon_code,omitempty"`

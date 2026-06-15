@@ -35,6 +35,16 @@ func SeedRBAC() {
 		{Key: "chat.read", Name: "Read Chats", Description: "Can view chats"},
 		{Key: "chat.send", Name: "Send Messages", Description: "Can send messages"},
 		{Key: "chat.delete", Name: "Delete Messages", Description: "Can delete messages"},
+
+		// driver permissions
+		{Key: "view_driver_dashboard", Name: "View Driver Dashboard", Description: "Allows drivers to view dashboard"},
+		{Key: "view_assigned_trips", Name: "View Assigned Trips", Description: "Allows drivers to view their assigned trips"},
+		{Key: "update_trip_status", Name: "Update Trip Status", Description: "Allows drivers to change trip statuses"},
+		{Key: "view_vehicle", Name: "View Assigned Vehicle", Description: "Allows drivers to view their assigned vehicle details"},
+		{Key: "access_tracking", Name: "Access Location Tracking", Description: "Allows drivers to send GPS tracking coordinates"},
+		{Key: "view_notifications", Name: "View Driver Notifications", Description: "Allows drivers to view their system notifications"},
+		{Key: "manage_profile", Name: "Manage Driver Profile", Description: "Allows drivers to update profile info"},
+		{Key: "access_chat", Name: "Access Driver Chat", Description: "Allows drivers to access support/group chat"},
 	}
 
 	for _, role := range roles {
@@ -55,7 +65,7 @@ func SeedRBAC() {
 		"admin":   {"manage_users", "manage_bookings", "manage_tracking", "manage_chat", "manage_offers", "manage_fleet", "manage_reviews", "manage_complaints","chat.read","chat.send","chat.delete"},
 		"agency":  {"manage_bookings", "manage_offers", "manage_fleet","chat.read","chat.send"},
 		"guide":   {"manage_bookings", "manage_tracking", "manage_chat", "manage_reviews", "chat.read","chat.send"},
-		"driver":  {"manage_tracking","chat.read","chat.send"},
+		"driver":  {"manage_tracking","chat.read","chat.send", "view_driver_dashboard", "view_assigned_trips", "update_trip_status", "view_vehicle", "access_tracking", "view_notifications", "manage_profile", "access_chat"},
 		"support": {"manage_chat", "manage_complaints","chat.read","chat.send"},
 		"supportagent": {"manage_chat", "manage_complaints", "manage_reviews", "chat.read","chat.send"},
 		"user":    {"chat.read","chat.send"},

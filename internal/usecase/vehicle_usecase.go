@@ -278,16 +278,12 @@ func (u *VehicleUsecase) AssignDriverToVehicle(ctx context.Context, actorID uint
 			return errors.New("access denied")
 		}
 
-		var driver entity.User
+		var driver entity.Driver
 		if err := tx.First(&driver, driverID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return fmt.Errorf("driver not found")
 			}
 			return err
-		}
-
-		if NormalizeRole(driver.Role) != "driver" {
-			return errors.New("user is not a driver")
 		}
 
 		vehicle.DriverID = &driverID

@@ -14,5 +14,5 @@ type Tracking struct {
 	Longitude float64   `gorm:"not null" json:"longitude"`
 	Booking   Booking   `gorm:"foreignKey:BookingID;constraint:OnDelete:CASCADE;" json:"-"`
 	Vehicle   *Vehicle  `gorm:"foreignKey:VehicleID;constraint:OnDelete:CASCADE;" json:"-"`
-	Driver    *User     `gorm:"foreignKey:DriverID;constraint:OnDelete:CASCADE;" json:"-"`
+	Driver    *Driver   `gorm:"foreignKey:DriverID;constraint:OnDelete:CASCADE;" json:"-"`
 }
