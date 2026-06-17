@@ -152,31 +152,50 @@ func (u *chatUsecase) MarkMessagesAsRead(ctx context.Context, userID, guideID, r
 	return u.repo.MarkMessagesAsRead(ctx, room.ID, readerID)
 }
 
-func (u *chatUsecase) GetContacts(ctx context.Context, userID string) ([]string, error) {
+func (u *chatUsecase) GetContacts(ctx context.Context, userID string) ([]entity.ContactInfo, error) {
 	rooms, err := u.repo.GetRoomsForUser(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
 
-	contactSet := make(map[string]bool)
+	contactSet := make(map[string]string)
 	for _, room := range rooms {
 		if room.UserID != "" && room.UserID != userID {
-			contactSet[room.UserID] = true
+			contactSet[room.UserID] = "user"
 		}
 		if room.GuideID != "" && room.GuideID != userID {
-			contactSet[room.GuideID] = true
+			contactSet[room.GuideID] = "guide"
 		}
 		if room.SupportAgentID != "" && room.SupportAgentID != userID {
-			contactSet[room.SupportAgentID] = true
+			contactSet[room.SupportAgentID] = "support"
 		}
 		if room.AdminID != "" && room.AdminID != userID {
-			contactSet[room.AdminID] = true
+			contactSet[room.AdminID] = "admin"
 		}
 	}
 
-	contacts := make([]string, 0, len(contactSet))
-	for contactID := range contactSet {
-		contacts = append(contacts, contactID)
+	contacts := make([]entity.ContactInfo, 0, len(contactSet))
+	for contactID, contactType := range contactSet {
+		name := "User ID: " + contactID
+		if u.userRepo != nil {
+			idUint, err := strconv.Atoi(contactID)
+			if err == nil {
+				user, _ := u.userRepo.GetByID(ctx, uint(idUint))
+				if user != nil && user.FullName != "" {
+					name = user.FullName
+				}
+			}
+		}
+		
+		if contactType == "support" {
+			name = "Customer Support"
+		}
+
+		contacts = append(contacts, entity.ContactInfo{
+			ID:   contactID,
+			Name: name,
+			Type: contactType,
+		})
 	}
 
 	return contacts, nil

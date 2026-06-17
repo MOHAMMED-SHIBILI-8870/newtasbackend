@@ -29,6 +29,13 @@ type ChatRoom struct {
 	Messages  []Message `gorm:"foreignKey:RoomID;constraint:OnDelete:CASCADE" json:"messages,omitempty"`
 }
 
+// ContactInfo is returned by GetContacts to display the real name of the contact
+type ContactInfo struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
 // Repositories interfaces (Inversion of Control)
 type ChatRepository interface {
 	GetRoom(ctx context.Context, userID, guideID string) (*ChatRoom, error)
@@ -45,6 +52,6 @@ type ChatUsecase interface {
 	SendMessage(ctx context.Context, senderID, receiverID, content string) (*Message, error)
 	GetMessages(ctx context.Context, userID, guideID string) ([]Message, error)
 	MarkMessagesAsRead(ctx context.Context, userID, guideID, readerID string) error
-	GetContacts(ctx context.Context, userID string) ([]string, error)
+	GetContacts(ctx context.Context, userID string) ([]ContactInfo, error)
 	GetSupportAgentID(ctx context.Context) (string, error)
 }
